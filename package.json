@@ -1,0 +1,61 @@
+{
+  "name": "symbiose-voyage-lanceur",
+  "version": "0.6.1",
+  "description": "Lanceur Voyage — installe UE4SS et les mods dans The Last Caretaker, liste les serveurs et tient le lien avec eux.",
+  "main": "src/principal.js",
+  "scripts": {
+    "start": "electron .",
+    "essais": "node essais/detection.js && node essais/langues.js && node essais/sauvegardes.js && node essais/paquet.js",
+    "batir": "electron-builder --win"
+  },
+  "author": "Symbiose Heritage Hosting",
+  "license": "UNLICENSED",
+  "type": "commonjs",
+  "private": true,
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "electron-builder": "^26.15.3",
+    "electron": "^33.4.11"
+  },
+  "build": {
+    "appId": "ca.symbioseheritage.voyage.lanceur",
+    "productName": "Voyage Lanceur",
+    "copyright": "Symbiose Heritage Hosting",
+    "directories": {
+      "output": "dist",
+      "buildResources": "ressources"
+    },
+    "files": [
+      "src/**/*",
+      "ui/**/*",
+      "mods/**/*",
+      "pont/**/*",
+      "ressources/ue4ss/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "mods/**/*",
+      "pont/**/*",
+      "ressources/ue4ss/**/*"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "ressources/voyage.ico",
+      "artifactName": "Voyage-Lanceur-${version}-installeur.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Voyage Lanceur",
+      "installerIcon": "ressources/voyage.ico",
+      "uninstallerIcon": "ressources/voyage.ico",
+      "installerHeaderIcon": "ressources/voyage.ico",
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

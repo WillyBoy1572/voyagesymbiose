@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <!--
+      ⚠️ CSP STRICTE. Le lanceur écrit dans le dossier d'un jeu : sa page ne
+         doit pouvoir charger ni script ni style venu d'ailleurs. Tout est
+         local, rien n'est distant.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'"
+    />
+    <title>Voyage — Lanceur</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <div class="marque">
+        <img src="marque.svg" alt="" width="36" height="36" />
+        <div>
+          <h1>THE LAST CARETAKER</h1>
+          <p class="sous-titre" data-t="appli.sousTitre"></p>
+        </div>
+      </div>
+      <div class="directive">DIRECTIVE: CO-OP<span class="curseur"></span></div>
+    </header>
+
+    <nav role="tablist">
+      <button role="tab" aria-selected="true" data-onglet="installation" data-t="nav.installation"></button>
+      <button role="tab" aria-selected="false" data-onglet="serveurs" data-t="nav.serveurs"></button>
+      <button role="tab" aria-selected="false" data-onglet="monde" data-t="nav.monde"></button>
+      <button role="tab" aria-selected="false" data-onglet="diagnostic" data-t="nav.diagnostic"></button>
+      <button role="tab" aria-selected="false" data-onglet="reglages" data-t="nav.reglages"></button>
+    </nav>
+
+    <main>
+      <div id="message" class="message" hidden></div>
+
+      <!-- ── Installation ─────────────────────────────────────────────── -->
+      <section id="installation">
+        <h2 data-t="inst.titreJeu"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="inst.jeu"></div>
+              <div class="detail" id="chemin-jeu" data-t="inst.recherche"></div>
+            </div>
+            <div class="pousse">
+              <span class="etat" id="etat-jeu">…</span>
+              <button class="action" id="btn-choisir-jeu" data-t="inst.choisir"></button>
+            </div>
+          </div>
+        </div>
+
+        <h2 data-t="inst.aInstaller"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre">UE4SS</div>
+              <div class="detail" id="chemin-ue4ss" data-t="inst.ue4ssDetail"></div>
+            </div>
+            <div class="pousse">
+              <span class="etat" id="etat-ue4ss">…</span>
+              <button class="action" id="btn-telecharger-ue4ss" data-t="inst.telecharger"></button>
+              <button class="action discret" id="btn-choisir-ue4ss" data-t="inst.parcourir"></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="inst.mods"></div>
+              <div class="detail" data-t="inst.modsDetail"></div>
+            </div>
+            <div class="pousse"><span class="etat" id="etat-mod">…</span></div>
+          </div>
+        </div>
+
+        <h2 data-t="inst.tout"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="inst.toutDetail"></div>
+              <div class="detail" data-t="inst.reversible"></div>
+            </div>
+            <div class="pousse">
+              <button class="action discret" id="btn-desinstaller" data-t="inst.retirer"></button>
+              <button class="action principal" id="btn-tout" data-t="inst.toutBouton"></button>
+            </div>
+          </div>
+          <div class="jauge" id="jauge" hidden><div class="jauge-remplie" id="jauge-remplie"></div></div>
+        </div>
+
+        <pre class="journal" id="journal" hidden></pre>
+      </section>
+
+      <!-- ── Serveurs ─────────────────────────────────────────────────── -->
+      <section id="serveurs" hidden>
+        <h2 data-t="serv.pseudo"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <input type="text" id="pseudo" data-t-ph="serv.pseudoPlaceholder" maxlength="24" />
+            <div class="pousse"><button class="action" id="btn-pseudo" data-t="serv.enregistrer"></button></div>
+          </div>
+        </div>
+
+        <h2 data-t="serv.ajouter"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <input type="text" id="adresse" data-t-ph="serv.adressePlaceholder" maxlength="260" />
+            <div class="pousse">
+              <button class="action" id="btn-ajouter" data-t="serv.boutonAjouter"></button>
+              <button class="action discret" id="btn-rafraichir" data-t="serv.actualiser"></button>
+            </div>
+          </div>
+        </div>
+
+        <h2 data-t="serv.tiens"></h2>
+        <div class="carte" id="liste-serveurs"></div>
+
+        <h2 data-t="lien.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" id="lien-titre" data-t="lien.pas"></div>
+              <div class="detail" id="lien-detail" data-t="lien.avant"></div>
+            </div>
+            <div class="pousse">
+              <span class="etat" id="lien-etat" data-t="serv.horsLigne"></span>
+              <button class="action" id="btn-deconnecter" data-t="lien.deconnecter" disabled></button>
+            </div>
+          </div>
+          <pre class="journal" id="lien-journal" hidden></pre>
+        </div>
+      </section>
+
+
+      <!-- ── Monde ────────────────────────────────────────────────────── -->
+      <section id="monde" hidden>
+        <h2 data-t="monde.tienne"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="monde.dossier"></div>
+              <div class="detail" id="monde-dossier"></div>
+            </div>
+            <div class="pousse">
+              <span class="etat" id="monde-compte"></span>
+              <button class="action discret" id="btn-monde-dossier" data-t="inst.choisir"></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="monde.publierTitre"></div>
+              <div class="detail" data-t="monde.publierDetail"></div>
+            </div>
+            <div class="pousse">
+              <button class="action" id="btn-monde-coffre" data-t="monde.mettreDeCote"></button>
+              <button class="action principal" id="btn-monde-publier" data-t="monde.publier"></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <input type="text" id="monde-nom" data-t-ph="monde.nomPlaceholder" maxlength="60" />
+            <input type="text" id="monde-etiquette" data-t-ph="monde.etiquettePlaceholder" maxlength="60" />
+          </div>
+        </div>
+
+        <h2 data-t="monde.duServeur"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" id="monde-distant-titre" data-t="monde.aucunDistant"></div>
+              <div class="detail" id="monde-distant-detail" data-t="monde.choisirServeur"></div>
+            </div>
+            <div class="pousse">
+              <select id="monde-serveur"></select>
+              <button class="action" id="btn-monde-apercu" data-t="monde.apercu"></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <div class="detail note" data-t="monde.avertissement"></div>
+          </div>
+          <div class="ligne" id="monde-apercu" hidden>
+            <div>
+              <div class="titre" data-t="monde.ceQuiChange"></div>
+              <div class="detail" id="monde-apercu-detail"></div>
+            </div>
+            <div class="pousse">
+              <button class="action principal" id="btn-monde-installer" data-t="monde.installer"></button>
+            </div>
+          </div>
+        </div>
+
+        <h2 data-t="monde.coffre"></h2>
+        <div class="carte" id="monde-copies"></div>
+
+        <pre class="journal" id="monde-journal" hidden></pre>
+      </section>
+
+      <!-- ── Diagnostic ───────────────────────────────────────────────── -->
+      <section id="diagnostic" hidden>
+        <h2 data-t="diag.titre"></h2>
+        <div class="carte" id="bilan">
+          <div class="vide" data-t="diag.cliqueAnalyser"></div>
+        </div>
+
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="diag.accroche"></div>
+              <div class="detail" id="accroche-detail" data-t="diag.accrocheDetail"></div>
+            </div>
+            <div class="pousse">
+              <select id="choix-accroche"></select>
+              <button class="action" id="btn-accroche" data-t="diag.changer"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="diag.analyserTitre"></div>
+              <div class="detail" data-t="diag.analyserDetail"></div>
+            </div>
+            <div class="pousse">
+              <button class="action principal" id="btn-diagnostic" data-t="diag.analyser"></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <div class="detail note" data-t="diag.console"></div>
+          </div>
+        </div>
+
+        <pre class="journal" id="rapport" hidden></pre>
+      </section>
+
+      <!-- ── Réglages ─────────────────────────────────────────────────── -->
+      <section id="reglages" hidden>
+        <h2 data-t="regl.langue"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="regl.langue"></div>
+              <div class="detail" data-t="regl.langueDetail"></div>
+            </div>
+            <div class="pousse" id="choix-langue"></div>
+          </div>
+        </div>
+
+        <h2 data-t="regl.dossiers"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="regl.ouvrirJeu"></div>
+              <div class="detail" id="reglages-chemin-jeu"></div>
+            </div>
+            <div class="pousse">
+              <button class="action" id="btn-ouvrir-jeu" data-t="regl.ouvrirJeu"></button>
+            </div>
+          </div>
+        </div>
+
+        <h2 data-t="regl.aPropos"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" id="a-propos-version"></div>
+              <div class="detail" data-t="regl.aProposDetail"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span id="pied-version">Voyage</span>
+      <span data-t="appli.pied"></span>
+    </footer>
+
+    <script src="langues.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

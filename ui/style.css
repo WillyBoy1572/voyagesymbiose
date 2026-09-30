@@ -1,0 +1,521 @@
+/*
+  ═════════════════════════════════════════════════════════════════════════
+   LANCEUR VOYAGE — habillage
+  ═════════════════════════════════════════════════════════════════════════
+   Les valeurs viennent de captures officielles du jeu, echantillonnees, pas
+   estimees a l'oeil :
+
+     fond des panneaux   #0f110c    (noir tres legerement olive)
+     filets              #ffffff    1 px, PLEINS, angles vifs
+     etiquettes          #d05a34    l'orange des libelles de l'inventaire
+     progression         #009041    le vert de la barre d'experience
+     bandeau de section  #bcbcbc    avec du texte SOMBRE dessus
+     onglet actif        #323232
+     accents du monde    #26acd8 (ocean) · #d87f26 (ambre industriel)
+
+   ⚠️ NI LUEUR NI DEGRADE NI COIN ARRONDI. L'interface du jeu est austere et
+      utilitaire : des rectangles noirs cernes d'un trait blanc d'un pixel.
+      Tout arrondi, tout halo, tout degrade s'en eloigne immediatement.
+
+   ⚠️ LE BANDEAU CLAIR PORTE DU TEXTE SOMBRE. C'est l'inverse du reste de la
+      page, et c'est exactement ce que fait le jeu ; l'oublier donne du gris
+      sur gris illisible.
+*/
+
+:root {
+  --fond: #070806;
+  --panneau: #0f110c;
+  --panneau-creux: #0a0b08;
+  --filet: #ffffff;
+  --filet-doux: rgba(255, 255, 255, 0.28);
+  --filet-tenu: rgba(255, 255, 255, 0.14);
+  --encre: #ffffff;
+  --encre-douce: #b9bdb4;
+  --encre-pale: #7d837a;
+  --bandeau: #bcbcbc;
+  --orange: #d05a34;
+  --orange-vif: #e8703f;
+  --vert: #009041;
+  --vert-vif: #12b257;
+  --ocean: #26acd8;
+  --actif: #323232;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+  ⚠️ `hidden` NE SUFFIT PAS FACE A `display: flex`. L'attribut ne pose
+     `display: none` que par la feuille du navigateur : n'importe quelle
+     regle d'auteur qui donne un `display` l'emporte, et l'element reste
+     visible. C'est arrive a la ligne d'apercu du monde, qui est une
+     `.ligne` — donc `display: flex`.
+*/
+[hidden] {
+  display: none !important;
+}
+
+body {
+  background: var(--fond);
+  color: var(--encre);
+  font: 14px/1.5 'Segoe UI', system-ui, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── En-tete ──────────────────────────────────────────────────────────── */
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 22px;
+  background: var(--panneau);
+  border-bottom: 1px solid var(--filet);
+}
+
+.marque {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.marque img {
+  display: block;
+}
+
+h1 {
+  font-size: 17px;
+  font-weight: 400;
+  /*
+    Le logo du jeu est tres espace. C'est sa signature typographique la plus
+    reconnaissable, et elle ne coute rien a reproduire.
+  */
+  letter-spacing: 0.22em;
+  line-height: 1.1;
+}
+
+.sous-titre {
+  font-size: 12px;
+  color: var(--encre-pale);
+  letter-spacing: 0.02em;
+  margin-top: 3px;
+}
+
+/*
+  La ligne « DIRECTIVE » du jeu : vert phosphore, chasse fixe, un curseur
+  qui clignote. C'est le seul endroit ou le lanceur se permet un clin d'oeil.
+*/
+.directive {
+  font: 12px/1 ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  letter-spacing: 0.18em;
+  color: var(--vert-vif);
+  white-space: nowrap;
+}
+
+.curseur {
+  display: inline-block;
+  width: 7px;
+  height: 12px;
+  margin-left: 3px;
+  vertical-align: -2px;
+  background: var(--vert-vif);
+  animation: clignote 1.1s step-end infinite;
+}
+
+@keyframes clignote {
+  50% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .curseur {
+    animation: none;
+  }
+}
+
+/* ── Onglets ──────────────────────────────────────────────────────────── */
+
+/*
+  Dans le jeu, les onglets sont des boites noires a filet blanc, collees,
+  et l'onglet actif est REMPLI d'un gris clair. On reprend tel quel.
+*/
+nav {
+  display: flex;
+  gap: 4px;
+  padding: 10px 22px 0;
+  background: var(--fond);
+}
+
+nav button {
+  appearance: none;
+  border: 1px solid var(--filet);
+  background: var(--panneau-creux);
+  color: var(--encre-douce);
+  font: 15px/1 inherit;
+  padding: 9px 20px;
+  cursor: pointer;
+  letter-spacing: 0.03em;
+}
+
+nav button:hover {
+  background: #17190f;
+  color: var(--encre);
+}
+
+nav button[aria-selected='true'] {
+  background: var(--actif);
+  color: var(--encre);
+}
+
+nav button:focus-visible {
+  outline: 2px solid var(--ocean);
+  outline-offset: -4px;
+}
+
+/* ── Corps ────────────────────────────────────────────────────────────── */
+
+main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 22px 26px;
+}
+
+/*
+  Le bandeau clair a texte sombre de l'inventaire. Il tient lieu de titre de
+  section : un rectangle plein, sans marge interieure superflue.
+*/
+h2 {
+  background: var(--bandeau);
+  color: #14150f;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  margin: 20px 0 0;
+}
+
+h2:first-child {
+  margin-top: 0;
+}
+
+.carte {
+  background: var(--panneau);
+  border: 1px solid var(--filet);
+  border-top: none;
+}
+
+.ligne {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 14px;
+}
+
+.ligne + .ligne {
+  border-top: 1px solid var(--filet-tenu);
+}
+
+.ligne > div:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.titre {
+  font-size: 14px;
+  color: var(--encre);
+  margin-bottom: 2px;
+}
+
+.detail {
+  font-size: 12.5px;
+  color: var(--encre-pale);
+  word-break: break-word;
+}
+
+/*
+  Dans le jeu, les libelles de donnees sont orange et les valeurs blanches.
+  Ici l'orange sert aux notes qui comptent.
+*/
+.note {
+  color: var(--orange);
+}
+
+.detail strong {
+  color: var(--encre-douce);
+  font-weight: 600;
+}
+
+.pousse {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.vide {
+  padding: 16px 14px;
+  color: var(--encre-pale);
+  font-size: 13px;
+}
+
+/* ── Boutons ──────────────────────────────────────────────────────────── */
+
+.action {
+  appearance: none;
+  border: 1px solid var(--filet);
+  background: var(--panneau-creux);
+  color: var(--encre);
+  font: 13px/1 inherit;
+  padding: 8px 15px;
+  cursor: pointer;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.action:hover:not(:disabled) {
+  background: var(--actif);
+}
+
+.action:active:not(:disabled) {
+  background: #101108;
+}
+
+.action:disabled {
+  /*
+    ⚠️ UN BOUTON ETEINT NE DOIT PAS AVOIR L'AIR CASSE. On baisse le contraste
+       du texte et de son filet, on ne le fait pas disparaitre.
+  */
+  color: var(--encre-pale);
+  border-color: var(--filet-doux);
+  cursor: not-allowed;
+}
+
+.action.principal {
+  background: var(--orange);
+  border-color: var(--orange);
+  color: #120a06;
+  font-weight: 600;
+}
+
+.action.principal:hover:not(:disabled) {
+  background: var(--orange-vif);
+  border-color: var(--orange-vif);
+}
+
+.action.principal:disabled {
+  background: transparent;
+  color: var(--encre-pale);
+  border-color: var(--filet-doux);
+}
+
+.action.discret {
+  border-color: var(--filet-doux);
+  color: var(--encre-douce);
+}
+
+.action:focus-visible {
+  outline: 2px solid var(--ocean);
+  outline-offset: 2px;
+}
+
+/* ── Champs ───────────────────────────────────────────────────────────── */
+
+input[type='text'],
+select {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  background: var(--panneau-creux);
+  border: 1px solid var(--filet-doux);
+  color: var(--encre);
+  font: 13px/1 inherit;
+  padding: 8px 11px;
+}
+
+select {
+  flex: none;
+  min-width: 150px;
+}
+
+input[type='text']::placeholder {
+  color: var(--encre-pale);
+}
+
+input[type='text']:focus,
+select:focus {
+  outline: none;
+  border-color: var(--ocean);
+}
+
+/* ── Etats ────────────────────────────────────────────────────────────── */
+
+.etat {
+  font: 11px/1 ui-monospace, Consolas, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 5px 9px;
+  border: 1px solid var(--filet-doux);
+  color: var(--encre-pale);
+  white-space: nowrap;
+}
+
+.etat.ok {
+  color: var(--vert-vif);
+  border-color: var(--vert);
+}
+
+.etat.manque {
+  color: var(--orange);
+  border-color: var(--orange);
+}
+
+/* ── Jauge ────────────────────────────────────────────────────────────── */
+
+/*
+  La barre d'experience du jeu : un rectangle vert plein sur fond noir,
+  cerne d'un filet. Pas d'arrondi, pas de rayure animee.
+*/
+.jauge {
+  height: 16px;
+  margin: 0 14px 14px;
+  background: var(--panneau-creux);
+  border: 1px solid var(--filet-doux);
+}
+
+.jauge-remplie {
+  height: 100%;
+  width: 0;
+  background: var(--vert);
+  transition: width 0.15s linear;
+}
+
+/* ── Journal ──────────────────────────────────────────────────────────── */
+
+.journal {
+  margin: 0 14px 14px;
+  padding: 10px 12px;
+  max-height: 210px;
+  overflow-y: auto;
+  background: #050604;
+  border: 1px solid var(--filet-tenu);
+  color: var(--encre-douce);
+  font: 12px/1.6 ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
+section > .journal {
+  margin-left: 0;
+  margin-right: 0;
+  margin-top: 12px;
+}
+
+/* ── Message ──────────────────────────────────────────────────────────── */
+
+.message {
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--filet-doux);
+  background: var(--panneau);
+  font-size: 13px;
+}
+
+.message.bon {
+  border-color: var(--vert);
+  color: var(--vert-vif);
+}
+
+.message.erreur {
+  border-color: var(--orange);
+  color: var(--orange-vif);
+}
+
+/* ── Choix de langue ──────────────────────────────────────────────────── */
+
+.langue {
+  appearance: none;
+  border: 1px solid var(--filet-doux);
+  background: var(--panneau-creux);
+  color: var(--encre-douce);
+  font: 13px/1 inherit;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.langue:hover {
+  background: var(--actif);
+  color: var(--encre);
+}
+
+.langue[aria-pressed='true'] {
+  background: var(--bandeau);
+  border-color: var(--bandeau);
+  color: #14150f;
+  font-weight: 600;
+}
+
+.langue:focus-visible {
+  outline: 2px solid var(--ocean);
+  outline-offset: 2px;
+}
+
+/* ── Pied ─────────────────────────────────────────────────────────────── */
+
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 22px;
+  border-top: 1px solid var(--filet-tenu);
+  background: var(--panneau);
+  color: var(--encre-pale);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+}
+
+/* ── Ascenseurs ───────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--fond);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2b2d24;
+  border: 1px solid var(--filet-tenu);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--actif);
+}
+
+/* ── Larges ecrans ────────────────────────────────────────────────────── */
+
+/*
+  ⚠️ TESTE EN 1920 ET EN 2560. Sans cette limite, les lignes s'etirent sur
+     toute la largeur et le texte devient penible a suivre.
+*/
+@media (min-width: 1500px) {
+  main,
+  header,
+  nav,
+  footer {
+    padding-left: max(22px, calc((100% - 1400px) / 2));
+    padding-right: max(22px, calc((100% - 1400px) / 2));
+  }
+}
