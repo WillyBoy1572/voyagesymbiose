@@ -182,5 +182,42 @@ ok(
   liste.filter((f) => f.includes('VoyageSondeMax')).join(', '),
 )
 
+/*
+  ⚠️ LE PONT NE DOIT RIEN LIRE HORS DE SON DOSSIER. Une fois installe, il est
+     deballe dans `app.asar.unpacked/pont/` tandis que le reste de
+     l'application reste DANS l'archive : un `require('../quelque-chose')` qui
+     marche parfaitement dans le depot devient MODULE_NOT_FOUND chez tout le
+     monde. C'est arrive avec `../package.json`, le pont mourait au premier
+     bonjour, et plus personne ne pouvait se connecter — sans qu'un seul banc
+     d'essai ne bronche, puisqu'ils lancent le pont depuis le depot.
+*/
+{
+  const pont = fs.readFileSync(path.join(RACINE, 'pont', 'pont.js'), 'utf8')
+  /*
+    ⚠️ ON ENLEVE LES COMMENTAIRES AVANT DE CHERCHER. Le commentaire qui
+       EXPLIQUE ce defaut cite forcement le require fautif : sans ce nettoyage,
+       le banc echoue sur sa propre documentation, et on finit par retirer la
+       phrase qui sert.
+  */
+  const sansCommentaires = pont
+    .replace(new RegExp('/\\*[\\s\\S]*?\\*/', 'g'), '')
+    .replace(new RegExp('^\\s*//.*$', 'gm'), '')
+  const chercheur = new RegExp("require\\(\\s*'(\\.\\.[^']*)'", 'g')
+  const dehors = [...sansCommentaires.matchAll(chercheur)].map((m) => m[1])
+  ok(
+    dehors.length === 0,
+    'le pont ne require rien hors de son dossier',
+    dehors.join(', '),
+  )
+
+  /*
+    ⚠️ ET LA MEME REGLE POUR LE SERVEUR EMBARQUE. Il est deballe au meme
+       endroit, avec le meme piege ; `src/server.js` lit bien `../package.json`,
+       mais lui est accompagne du sien dans `serveur/`.
+  */
+  const paquetServeur = fs.existsSync(path.join(RACINE, 'serveur', 'package.json'))
+  ok(paquetServeur, 'le serveur embarque a bien son propre package.json')
+}
+
 console.log('\n' + (echecs ? `${echecs} ÉCHEC(S)` : 'TOUT PASSE'))
 process.exit(echecs ? 1 : 0)

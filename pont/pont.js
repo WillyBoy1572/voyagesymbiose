@@ -207,6 +207,21 @@ const MOTS = {
 }
 
 const langue = MOTS[argument('langue', 'fr')] ? argument('langue', 'fr') : 'fr'
+
+/**
+ * La version du lanceur, annoncee au serveur.
+ *
+ * ⚠️ ELLE ARRIVE PAR LA LIGNE DE COMMANDE, ELLE NE SE LIT PAS SUR LE DISQUE.
+ *    `require('../package.json')` marchait dans le depot et plantait chez tout
+ *    le monde : une fois installe, le pont est deballe dans
+ *    `app.asar.unpacked/pont/`, et `package.json` est reste DANS l'archive.
+ *    Le pont mourait au premier `bonjour` avec MODULE_NOT_FOUND, et personne
+ *    ne pouvait plus se connecter.
+ *
+ * ⚠️ LE PONT NE LIT RIEN HORS DE SON DOSSIER. C'est la regle qui evite de
+ *    refaire ce defaut : ce qu'il lui faut, le lanceur le lui passe.
+ */
+const VERSION = argument('version', '?')
 const M = (cle, ...a) => MOTS[langue][cle](...a)
 
 function log(...a) {
@@ -730,7 +745,7 @@ function seConnecter() {
     t: 'bonjour',
     nom: nomJoueur,
     protocole: PROTOCOLE,
-    version: require('../package.json').version,
+    version: VERSION,
     motDePasse,
     /*
       ⚠️ LA LANGUE DU LANCEUR PART AVEC LE BONJOUR. C'est elle qui decide dans

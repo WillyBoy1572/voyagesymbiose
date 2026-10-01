@@ -85,6 +85,31 @@ function noter(texte) {
 /**
  * Le chemin de `pont.js`, dans l'application installee comme en developpement.
  */
+/**
+ * La version du lanceur.
+ *
+ * ⚠️ ON LA LIT UNE FOIS ET ON LA GARDE. Et on ne depend pas d'Electron pour
+ *    l'obtenir : `app.getVersion()` n'existe pas quand ce module est charge
+ *    par un banc d'essai, et un module qui exige Electron n'est plus testable.
+ */
+/** Appelle, et rend un repli plutot que de planter. */
+function sur(f, repli) {
+  try {
+    const r = f()
+    return r === undefined || r === null ? repli : r
+  } catch {
+    return repli
+  }
+}
+
+let versionLue = null
+function version() {
+  if (versionLue === null) {
+    versionLue = sur(() => require('../package.json').version, '?')
+  }
+  return versionLue
+}
+
 function cheminPont() {
   const dansAsar = path.join(__dirname, '..', 'pont', 'pont.js')
   // Hors developpement, le fichier vit dans `app.asar.unpacked`.
@@ -159,7 +184,24 @@ function demarrer({
   */
   const parBillet = Boolean(billet && rendezvous)
   const adresse = parBillet ? `0.0.0.0:0` : `${hote}:${port}`
-  const arguments_ = [cheminPont(), '--serveur', adresse, '--nom', nom || 'Joueur', '--langue', langue]
+  /*
+    ⚠️ LA VERSION SE LIT ICI, PAS DANS LE PONT. Le processus principal tourne
+       DANS l'archive asar, ou `package.json` existe ; le pont, lui, en est
+       deballe et ne le trouve pas. Le pont a essaye de le lire lui-meme une
+       fois : il mourait au premier bonjour et plus personne ne pouvait se
+       connecter.
+  */
+  const arguments_ = [
+    cheminPont(),
+    '--serveur',
+    adresse,
+    '--nom',
+    nom || 'Joueur',
+    '--langue',
+    langue,
+    '--version',
+    version(),
+  ]
   if (motDePasse) arguments_.push('--motdepasse', motDePasse)
 
   /*
