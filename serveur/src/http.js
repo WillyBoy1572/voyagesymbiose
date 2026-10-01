@@ -81,8 +81,10 @@ function memeSecret(a, b) {
 }
 
 function creerHttp(config, session, monde, sauvegardes, modules = {}) {
-  const { mesures, entites, pnj, equipes, activites, inventaires, identites, moderation, ressources, annuaire, temps } =
-    modules
+  const {
+    mesures, entites, pnj, equipes, activites, inventaires, identites,
+    moderation, ressources, annuaire, temps, rendezvous, percage,
+  } = modules
 
   /**
    * La cle d'administration. Vide = les routes `/admin/...` n'existent pas.
@@ -163,6 +165,8 @@ function creerHttp(config, session, monde, sauvegardes, modules = {}) {
           sanctions: moderation ? moderation.nombre : 0,
           ressources: ressources ? ressources.liste() : [],
           annuaire: annuaire ? annuaire.rapport() : null,
+          rendezvous: rendezvous ? rendezvous.rapport() : null,
+          percage: percage ? percage.rapport() : null,
           temps: temps ? temps.instantane() : null,
         })
       }
@@ -182,6 +186,7 @@ function creerHttp(config, session, monde, sauvegardes, modules = {}) {
             hote: j.hote,
             spectateur: j.spectateur,
             ping: j.ping,
+            qualite: j.qualite ? { ...j.qualite.rapport(), etat: j.qualite.etat } : null,
             decalageMs: j.decalage,
             pos: j.pos,
             vie: j.vie,
@@ -319,6 +324,14 @@ function creerHttp(config, session, monde, sauvegardes, modules = {}) {
 
       case '/transport':
         return json(reponse, 200, transport.rapport())
+
+      case '/percage':
+        /*
+          ⚠️ LE BILLET N'EST PAS UN SECRET, ET C'EST VOULU. Il sert justement a
+             etre partage : c'est ce qu'un hote donne a ses amis. Il ne donne
+             aucun droit — le mot de passe du serveur, lui, reste demande.
+        */
+        return json(reponse, 200, percage ? percage.rapport() : { actif: false })
 
       case '/mesures':
         /*

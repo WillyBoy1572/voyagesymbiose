@@ -149,6 +149,22 @@ local classesCreatures = {}
 local heureServeur = nil
 local coffreServeur = {}
 
+--[[
+  LES REGLAGES DES PLAQUES DE NOM.
+
+  ATTENTION : C EST UN CHOIX LOCAL, COMME LE MIROIR. Ce qu un joueur affiche
+  au-dessus des tetes ne regarde que lui ; le serveur n en connait pas un mot.
+  Le lanceur les pose, le pont les porte, le mod les applique.
+
+  ATTENTION : LA PORTEE EST EN METRES DANS L INTERFACE, EN CENTIMETRES ICI.
+  Unreal compte en centimetres ; melanger les deux donne des plaques qui
+  disparaissent a un metre ou qui ne disparaissent jamais.
+]]
+local plaques = { noms = true, distance = true, ping = false, vie = false, portee = 8000 }
+
+--- Mode debug : identifiants, modes de rendu, compteurs. F1 bascule.
+local debug = false
+
 --- Ce qu'on a a envoyer au pont, vide par le battement.
 local aEnvoyer = {}
 
@@ -488,6 +504,24 @@ local function classeDuTexte()
     if classeTexte ~= nil then return classeTexte end
     classeTexte = sur(function() return StaticFindObject("/Script/Engine.TextRenderComponent") end, false)
     return classeTexte
+end
+
+--[[
+  Le texte a ecrire au-dessus d une tete, selon les reglages.
+
+  ATTENTION : UNE VALEUR INCONNUE NE S AFFICHE PAS, elle ne s affiche pas a
+  zero. Un joueur dont le mod n a pas su lire les points de vie afficherait
+  « 0 PV » et passerait pour mourant.
+]]
+local function texteDePlaque(f)
+    if not plaques.noms then return "" end
+    local bouts = { f.nom or "?" }
+    if plaques.distance and f.distance then
+        bouts[#bouts + 1] = string.format("%dm", math.floor(f.distance))
+    end
+    if plaques.ping and f.ping then bouts[#bouts + 1] = f.ping .. "ms" end
+    if plaques.vie and f.vie then bouts[#bouts + 1] = math.floor(f.vie) .. "pv" end
+    return table.concat(bouts, "  ")
 end
 
 --- Pose un texte sur un TextRenderComponent. Rend le chemin qui a marche, ou nil.
@@ -838,6 +872,21 @@ local function lireDuPont()
             -- Le lanceur decide du mode ; le mod l applique.
             lot.mode = ligne:match("^mode%s+(%a+)")
 
+        elseif mot == "plaques" then
+            -- plaques <noms> <distance> <ping> <vie> <portee en metres>
+            local n, d, p, v, portee = ligne:match(
+                "^plaques%s+(%d)%s+(%d)%s+(%d)%s+(%d)%s+(%d+)")
+            if n then
+                lot.plaques = {
+                    noms = n == "1", distance = d == "1", ping = p == "1", vie = v == "1",
+                    -- L interface parle en metres, Unreal en centimetres.
+                    portee = (tonumber(portee) or 80) * 100,
+                }
+            end
+
+        elseif mot == "debug" then
+            lot.debug = ligne:match("^debug%s+(%d)") == "1"
+
         elseif mot == "rdv" then
             local rx, ry, rz, ryaw, rqui = ligne:match("^rdv%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.*)$")
             if rx and tonumber(rx) then
@@ -1004,7 +1053,26 @@ local function suivreLesAutres(lot)
 
             animer(f.acteur, j.vx, j.vy, j.vz)
 
-            if f.plaque and maPos then tournerPlaque(f.plaque, f, maPos) end
+            --[[
+              ATTENTION : LA PLAQUE SE MET A JOUR, ELLE N EST PAS POSEE UNE FOIS.
+              La distance change a chaque pas, le ping et la vie aussi. Et
+              au-dela de la portee reglee, on la cache plutot que d afficher un
+              nom illisible a l autre bout de la carte.
+            ]]
+            if f.plaque and maPos then
+                local dx = (f.x or 0) - (maPos.X or 0)
+                local dy = (f.y or 0) - (maPos.Y or 0)
+                local dz = (f.z or 0) - (maPos.Z or 0)
+                local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+                f.distance = d / 100
+
+                local visible = plaques.noms and d <= plaques.portee
+                pcall(function() f.plaque:SetVisibility(visible, false) end)
+                if visible then
+                    poserTexte(f.plaque, texteDePlaque(f))
+                    tournerPlaque(f.plaque, f, maPos)
+                end
+            end
         end
     end
 
@@ -1709,8 +1777,52 @@ local function montrerLeCoffre()
     ecran("coffre commun : " .. table.concat(bouts, ", "), OR, 10.0)
 end
 
+--[[
+  Ce que le mode debug affiche.
+
+  ATTENTION : CE SONT DES CHIFFRES REELS, PAS UNE DECORATION. Nombre de
+  fantomes, mode de rendu du dernier calcul, creatures suivies, classes
+  retenues : c est exactement ce qu il faut savoir quand quelque chose ne
+  s affiche pas, et c est introuvable autrement.
+]]
+--[[
+  Applique les reglages venus du lanceur.
+
+  ATTENTION : LIRE ET APPLIQUER SONT DEUX GESTES, et il faut les separer.
+  Melanges, ils rendent le reglage intestable : un banc d essai qui lit le
+  fichier ne declenche rien, et on croit que la lecture est cassee alors que
+  c est l application qui n a jamais eu lieu. C est exactement ce que l essai
+  a attrape.
+]]
+local function appliquerReglages(lot)
+    if lot.plaques then plaques = lot.plaques end
+    if lot.debug ~= nil then debug = lot.debug end
+end
+
+local function montrerDebug()
+    local nFantomes, nCreatures, nMasquees, nClasses = 0, 0, 0, 0
+    for _ in pairs(fantomes) do nFantomes = nFantomes + 1 end
+    for _ in pairs(fantomesCreatures) do nCreatures = nCreatures + 1 end
+    for _ in pairs(masquees) do nMasquees = nMasquees + 1 end
+    for _ in pairs(classesCreatures) do nClasses = nClasses + 1 end
+
+    local lignes = {
+        "joueurs " .. nFantomes,
+        "creatures " .. nCreatures .. " (masquees " .. nMasquees .. ", classes " .. nClasses .. ")",
+        "mode " .. modeCreatures .. (jeSuisHote and " / hote" or ""),
+        "rendu " .. (faits["rendu"] or "?"),
+        "envoyes " .. envoyes,
+        "horloge " .. math.floor(horlogeMs / 1000) .. "s",
+    }
+    ecran(table.concat(lignes, " | "), OR, 12.0)
+
+    for cle, valeur in pairs(faits) do
+        journal("debug " .. cle .. " = " .. valeur)
+    end
+end
+
 local function montrerAide()
-    ecran("F2 creatures (" .. modeCreatures .. ") - F3 point de retrouvailles - F4 aide - F5 rejoindre - F6 qui est la - F7 installer le monde - F9 publier - F10 coffre - F11 marquer - F12 salut", BLANC, 16.0)
+    ecran("F1 debug - F2 creatures (" .. modeCreatures .. ") - F3 point de retrouvailles - F4 aide - F5 rejoindre - F6 qui est la - F7 installer le monde - F9 publier - F10 coffre - F11 marquer - F12 salut", BLANC, 16.0)
 end
 
 --[[
@@ -1745,6 +1857,10 @@ local function poserLesTouches()
       quelque chose tourne mal en pleine partie, il doit pouvoir tout rendre sans
       quitter le jeu ni chercher dans le lanceur.
     ]]
+    lier("F1", function()
+        debug = not debug
+        if debug then montrerDebug() else ecran("debug ferme.", BLANC, 4.0) end
+    end)
     lier("F2", function()
         changerDeMode(modeCreatures == "miroir" and "annonce" or "miroir")
     end)
@@ -1892,6 +2008,9 @@ local function battement()
     pcall(envoyerLesFaits)
     pcall(envoyerLaFile)
 
+    -- Le debug se rafraichit toutes les cinq secondes tant qu il est allume.
+    if debug and horlogeMs % 5000 < PERIODE_MS then pcall(montrerDebug) end
+
     local lot = sur(lireDuPont, nil)
     if lot then
         if lot.hote ~= nil and lot.hote ~= jeSuisHote then
@@ -1915,6 +2034,8 @@ local function battement()
         if lot.mode and lot.mode ~= modeCreatures then
             pcall(function() changerDeMode(lot.mode) end)
         end
+
+        pcall(function() appliquerReglages(lot) end)
         if lot.coffre and #lot.coffre > 0 then coffreServeur = lot.coffre end
         pcall(function() suivreLesAutres(lot) end)
         pcall(function() suivreLesCreatures(lot) end)
@@ -1949,6 +2070,10 @@ if VOYAGE_ESSAI then
         pointDeRendezVous = function() return rendezVous end,
         heureDuServeur = function() return heureServeur end,
         modeCreatures = function() return modeCreatures end,
+        plaques = function() return plaques end,
+        appliquerReglages = appliquerReglages,
+        debug = function() return debug end,
+        texteDePlaque = texteDePlaque,
         estCreature = estCreature,
         ouAfficher = ouAfficher,
         empiler = empiler,

@@ -99,5 +99,23 @@ ok(T('nav.serveurs') === 'Servers', 'la langue choisie est bien celle rendue', T
 LANGUES_appliquer('fr')
 ok(T('nav.serveurs') === 'Serveurs', 'et on peut revenir au français', T('nav.serveurs'))
 
+/*
+  ⚠️ LA PAGE CITE DES CLES QUE `src/` NE CITE PAS. Jusqu'ici le banc ne lisait
+     que le processus principal : six cles utilisees par `ui/app.js` manquaient
+     dans les trois langues sans que rien ne le dise, et elles se seraient
+     affichees telles quelles a l'ecran du joueur.
+*/
+{
+  const app = fs.readFileSync(path.join(RACINE, 'ui', 'app.js'), 'utf8')
+  const citees = new Set()
+  for (const m of app.matchAll(/\bT\(\s*'([a-zA-Z0-9_.]+)'/g)) citees.add(m[1])
+  const manquantes = [...citees].filter((c) => LANGUES_TEXTES.fr[c] === undefined)
+  ok(
+    manquantes.length === 0,
+    `les ${citees.size} clés citées dans ui/app.js sont traduites`,
+    manquantes.slice(0, 8).join(', '),
+  )
+}
+
 console.log('\n' + (echecs ? `${echecs} ÉCHEC(S)` : 'TOUT PASSE'))
 process.exit(echecs ? 1 : 0)

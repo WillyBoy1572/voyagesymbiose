@@ -38,6 +38,23 @@
     <main>
       <div id="message" class="message" hidden></div>
 
+      <!--
+        Un lien `voyage://` PROPOSE, il ne connecte pas. Un lanceur qui se
+        brancherait au clic d'un lien serait un lanceur qu'on peut téléguider.
+      -->
+      <div id="invitation" class="carte" hidden>
+        <div class="ligne">
+          <div>
+            <div class="titre" id="invitation-titre" data-t="inv.titre"></div>
+            <div class="detail" id="invitation-detail">—</div>
+          </div>
+          <div class="pousse">
+            <button class="action principal" id="btn-invitation-rejoindre" data-t="inv.rejoindre"></button>
+            <button class="action discret" id="btn-invitation-ignorer" data-t="inv.ignorer"></button>
+          </div>
+        </div>
+      </div>
+
       <!-- ── Installation ─────────────────────────────────────────────── -->
       <section id="installation">
         <h2 data-t="inst.titreJeu"></h2>
@@ -124,6 +141,23 @@
         </div>
 
         <h2 data-t="serv.tiens"></h2>
+        <!--
+          Les filtres sont appliqués à la liste déjà reçue : on ne redemande
+          rien au réseau pour cacher trois cartes.
+        -->
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="filtre.titre"></div>
+              <div class="detail" data-t="filtre.detail"></div>
+            </div>
+            <div class="pousse">
+              <label class="interrupteur"><input type="checkbox" id="filtre-enligne" /> <span data-t="filtre.enLigne"></span></label>
+              <label class="interrupteur"><input type="checkbox" id="filtre-libres" /> <span data-t="filtre.libres"></span></label>
+              <label class="interrupteur"><input type="checkbox" id="filtre-ouverts" /> <span data-t="filtre.ouverts"></span></label>
+            </div>
+          </div>
+        </div>
         <div class="carte" id="liste-serveurs"></div>
 
         <h2 data-t="lien.titre"></h2>
@@ -288,6 +322,24 @@
             </div>
           </div>
           <div class="ligne">
+            <div>
+              <div class="titre" data-t="heb.percageTitre"></div>
+              <div class="detail" data-t="heb.percageDetail"></div>
+            </div>
+            <div class="pousse">
+              <label class="interrupteur"><input type="checkbox" id="heb-percage" checked /> <span data-t="heb.percage"></span></label>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="heb.billetTitre"></div>
+              <div class="detail" id="heb-billet" data-t="heb.billetAttente"></div>
+            </div>
+            <div class="pousse">
+              <button class="action discret" id="btn-heb-lien" data-t="heb.copierLien" disabled></button>
+            </div>
+          </div>
+          <div class="ligne">
             <div class="detail note" data-t="heb.pareFeu"></div>
           </div>
         </div>
@@ -321,6 +373,7 @@
           </form>
           <div class="ligne">
             <div class="detail note" id="heb-annuaire">—</div>
+            <div class="detail note" id="heb-percage">—</div>
           </div>
         </div>
 
@@ -424,6 +477,46 @@
           </div>
         </div>
 
+        <!--
+          On regarde, on ne télécharge pas : un lanceur qui remplace son propre
+          exécutable pendant qu'une partie tourne est une mauvaise idée.
+        -->
+        <h2 data-t="maj.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" id="maj-lanceur" data-t="maj.inconnue"></div>
+              <div class="detail" data-t="maj.lanceurDetail"></div>
+            </div>
+            <div class="pousse">
+              <button class="action" id="btn-maj-verifier" data-t="maj.verifier"></button>
+              <button class="action discret" id="btn-maj-telecharger" data-t="maj.telecharger" hidden></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="maj.jeuTitre"></div>
+              <div class="detail" id="maj-jeu" data-t="maj.jeuInconnu"></div>
+            </div>
+          </div>
+        </div>
+
+        <h2 data-t="sout.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="sout.sousTitre"></div>
+              <div class="detail" data-t="sout.detail"></div>
+            </div>
+            <div class="pousse">
+              <button class="action" id="btn-soutien" data-t="sout.fabriquer"></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <div class="detail note" data-t="sout.expurge"></div>
+          </div>
+        </div>
+
         <pre class="journal" id="rapport" hidden></pre>
       </section>
 
@@ -463,6 +556,44 @@
           c'est la seule façon de voir LE MÊME requin, puisque le jeu fait
           apparaître les siennes chez chacun, séparément.
         -->
+        <!--
+          Ce que le joueur affiche au-dessus des têtes ne regarde que lui : ces
+          réglages ne partent pas sur le réseau.
+        -->
+        <h2 data-t="pl.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="pl.sousTitre"></div>
+              <div class="detail" data-t="pl.detail"></div>
+            </div>
+            <div class="pousse">
+              <label class="interrupteur"><input type="checkbox" id="pl-noms" checked /> <span data-t="pl.noms"></span></label>
+              <label class="interrupteur"><input type="checkbox" id="pl-distance" checked /> <span data-t="pl.distance"></span></label>
+              <label class="interrupteur"><input type="checkbox" id="pl-ping" /> <span data-t="pl.ping"></span></label>
+              <label class="interrupteur"><input type="checkbox" id="pl-vie" /> <span data-t="pl.vie"></span></label>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="pl.porteeTitre"></div>
+              <div class="detail" data-t="pl.porteeDetail"></div>
+            </div>
+            <div class="pousse">
+              <input type="number" id="pl-portee" value="80" min="5" max="500" />
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="dbg.titre"></div>
+              <div class="detail" data-t="dbg.detail"></div>
+            </div>
+            <div class="pousse">
+              <label class="interrupteur"><input type="checkbox" id="dbg-actif" /> <span data-t="dbg.actif"></span></label>
+            </div>
+          </div>
+        </div>
+
         <h2 data-t="cre.titre"></h2>
         <div class="carte">
           <div class="ligne">

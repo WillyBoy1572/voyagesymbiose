@@ -207,6 +207,27 @@ const config = {
   */
   cleAdmin: texte('ADMIN_CLE', '', 128),
 
+  // ── Percage de NAT ──────────────────────────────────────────────────────
+
+  /*
+    Tenir un point de rendez-vous pour les serveurs heberges a la maison.
+
+    ⚠️ A N'ALLUMER QUE SUR UN SERVEUR PUBLIC. Un point de rendez-vous ne sert a
+       rien derriere une box : il doit etre joignable de partout, puisque c'est
+       justement lui qui apprend aux autres leur adresse publique.
+  */
+  rendezvous: drapeau('RENDEZVOUS', false),
+
+  /*
+    S'annoncer a un point de rendez-vous, pour etre joignable sans redirection.
+
+    ⚠️ C'EST LE SERVEUR QUI S'ANNONCE, PAS LE LANCEUR. L'association que la box
+       garde ouverte est celle de la prise UDP du JEU : annoncee depuis ailleurs,
+       elle ouvrirait un trou vers un port inutile.
+  */
+  percage: drapeau('PERCAGE', false),
+  rendezvousAdresse: texte('RENDEZVOUS_ADRESSE', '', 128),
+
   /** Version du protocole : un client plus vieux est refuse proprement. */
   protocole: 2,
   /**

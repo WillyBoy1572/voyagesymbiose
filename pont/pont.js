@@ -44,8 +44,33 @@ function argument(nom, defaut) {
 }
 
 const cible = argument('serveur', '127.0.0.1:7777')
-const [hote, portTexte] = cible.split(':')
-const port = Number.parseInt(portTexte, 10) || 7777
+const [hoteInitial, portTexte] = cible.split(':')
+
+/*
+  ⚠️ L'ADRESSE DU SERVEUR N'EST PLUS FIGEE. Avec un billet, on ne la connait
+     qu'apres avoir interroge le point de rendez-vous : c'est lui qui nous dit
+     ou taper. Tant qu'il n'a pas repondu, ces deux valeurs ne veulent rien dire.
+*/
+let hote = hoteInitial
+let port = Number.parseInt(portTexte, 10) || 7777
+
+/*
+  Rejoindre par billet, sans que l'hote ait redirige un port.
+
+  ⚠️ LE PERCAGE NE MARCHE PAS PARTOUT, ET ON NE LE PROMET PAS. Un NAT dit
+     « symetrique » donne a l'hote un port public different par destination :
+     l'adresse apprise au rendez-vous ne vaut alors rien. On essaie, on compte
+     les tentatives, et on le DIT au lieu de laisser le joueur attendre.
+*/
+const billet = (argument('billet', '') || '').toUpperCase().slice(0, 16)
+const rendezVousAdresse = argument('rendezvous', '')
+let rdv = null
+if (billet && rendezVousAdresse) {
+  const m = rendezVousAdresse.match(/^([A-Za-z0-9.\-]{1,253}):(\d{1,5})$/)
+  if (m) rdv = { adresse: m[1], port: Number.parseInt(m[2], 10) }
+}
+let hoteTrouve = !billet
+let tentativesRdv = 0
 const nomJoueur = argument('nom', os.userInfo().username || 'Joueur').slice(0, 24)
 const motDePasse = argument('motdepasse', '')
 
@@ -70,6 +95,23 @@ let jetonReprise = argument('reprise', '')
      joueurs : chacun decide de ce qu'il voit. Le serveur, lui, ne fait que
      fournir la liste.
 */
+/*
+  Les reglages des plaques de nom, portes jusqu'au mod.
+
+  ⚠️ C'EST UN CHOIX LOCAL, COMME LE MIROIR. Ce que TU affiches au-dessus des
+     tetes ne regarde que toi : le serveur n'a pas a en connaitre un mot.
+*/
+const plaques = {
+  noms: argument('plaques', 'oui') !== 'non',
+  distance: argument('plaques-distance', 'oui') !== 'non',
+  ping: argument('plaques-ping', 'non') === 'oui',
+  vie: argument('plaques-vie', 'non') === 'oui',
+  portee: Math.min(Math.max(Number.parseInt(argument('plaques-portee', '80'), 10) || 80, 5), 500),
+}
+
+/** Mode debug : le mod affiche identifiants, modes de rendu et compteurs. */
+const debug = argument('debug', 'non') === 'oui'
+
 const MODES_CREATURES = ['miroir', 'annonce', 'rien']
 const modeCreatures = MODES_CREATURES.includes(argument('creatures', 'miroir'))
   ? argument('creatures', 'miroir')
@@ -102,6 +144,12 @@ const MOTS = {
     identite: (e) => `identité reconnue : ${e}`,
     anonyme: () => 'connecté en anonyme (aucune identité signée)',
     repris: () => 'ta place a été rendue : position et équipe retrouvées',
+    rdvDemande: (b) => `recherche de l'hôte au point de rendez-vous (billet ${b})…`,
+    rdvTrouve: (q) => `hôte trouvé : ${q} — on perce le chemin`,
+    rdvRefus: (r) => `le point de rendez-vous refuse : ${r}`,
+    rdvAbandon: () => 'l’hôte ne répond pas. Son billet a peut-être expiré, ou sa box ne laisse pas percer.',
+    rdvSansAdresse: () => 'un billet a été donné, mais aucun point de rendez-vous : impossible de chercher l’hôte.',
+    qualite: (r, g, p) => `lien : ${r} ms, gigue ${g} ms, perte ${p} %`,
   },
   en: {
     connexion: (h, p, n) => `connecting to ${h}:${p} as “${n}”…`,
@@ -119,6 +167,12 @@ const MOTS = {
     identite: (e) => `identity recognised: ${e}`,
     anonyme: () => 'connected anonymously (no signed identity)',
     repris: () => 'your seat was returned: position and team restored',
+    rdvDemande: (b) => `looking for the host at the rendezvous (ticket ${b})…`,
+    rdvTrouve: (q) => `host found: ${q} — punching through`,
+    rdvRefus: (r) => `the rendezvous refused: ${r}`,
+    rdvAbandon: () => 'the host is not answering. Their ticket may have expired, or their router will not let us through.',
+    rdvSansAdresse: () => 'a ticket was given but no rendezvous: cannot look for the host.',
+    qualite: (r, g, p) => `link: ${r} ms, jitter ${g} ms, loss ${p} %`,
   },
   es: {
     connexion: (h, p, n) => `conectando a ${h}:${p} como «${n}»…`,
@@ -136,6 +190,12 @@ const MOTS = {
     identite: (e) => `identidad reconocida: ${e}`,
     anonyme: () => 'conectado como anónimo (sin identidad firmada)',
     repris: () => 'te devolvieron tu sitio: posición y equipo recuperados',
+    rdvDemande: (b) => `buscando al anfitrión en el punto de encuentro (billete ${b})…`,
+    rdvTrouve: (q) => `anfitrión encontrado: ${q} — abriendo el camino`,
+    rdvRefus: (r) => `el punto de encuentro rechaza: ${r}`,
+    rdvAbandon: () => 'el anfitrión no responde. Su billete puede haber caducado, o su router no deja pasar.',
+    rdvSansAdresse: () => 'se dio un billete pero ningún punto de encuentro: no se puede buscar al anfitrión.',
+    qualite: (r, g, p) => `enlace: ${r} ms, fluctuación ${g} ms, pérdida ${p} %`,
   },
 }
 
@@ -211,6 +271,11 @@ function deposerPourLeJeu(tick, force = false) {
 
   lignes.push(`hote ${jeSuisHote ? 1 : 0}`)
   lignes.push(`mode ${modeCreatures}`)
+  lignes.push(
+    `plaques ${plaques.noms ? 1 : 0} ${plaques.distance ? 1 : 0} ${plaques.ping ? 1 : 0} ` +
+      `${plaques.vie ? 1 : 0} ${plaques.portee}`,
+  )
+  lignes.push(`debug ${debug ? 1 : 0}`)
 
   if (rendezVous && rendezVous.pos) {
     const r = rendezVous
@@ -335,6 +400,7 @@ let tempsServeur = null
 let faitsAMontrer = []
 let rendezVous = null
 let derniereReponse = 0
+let derniereQualite = null
 
 function envoyer(objet) {
   const corps = jeton && !objet.jeton ? { ...objet, jeton } : objet
@@ -356,6 +422,51 @@ socket.on('message', (tampon) => {
   derniereReponse = Date.now()
 
   switch (m.t) {
+    /*
+      Le rendez-vous nous dit ou taper.
+
+      ⚠️ ON TAPE AVANT DE DIRE BONJOUR. Le `bonjour` seul n'ouvrirait rien : la
+         box de l'hote ne laisse entrer que ce qui repond a un paquet qu'elle a
+         vu sortir. Quelques coups de percage d'abord, le protocole ensuite.
+    */
+    case 'rdv-hote': {
+      if (hoteTrouve) break
+      const h = m.hote
+      if (!h || typeof h.adresse !== 'string' || !Number.isInteger(h.port)) break
+      hote = h.adresse
+      port = h.port
+      hoteTrouve = true
+      log(M('rdvTrouve', m.nom || `${hote}:${port}`))
+
+      const coups = Math.min(Math.max(Number(m.coups) || 3, 1), 10)
+      for (let i = 0; i < coups; i++) {
+        setTimeout(() => socket.send(Buffer.from(JSON.stringify({ t: 'rdv-salut' })), port, hote, () => {}), i * 120)
+      }
+      setTimeout(seConnecter, coups * 120 + 100)
+      break
+    }
+
+    case 'rdv-refus':
+      log(M('rdvRefus', m.raison ?? '?'))
+      break
+
+    case 'rdv-salut':
+      // L'hote a perce vers nous : le chemin est ouvert, il n'y a rien a faire.
+      break
+
+    case 'reseau':
+      /*
+        ⚠️ C'EST NOTRE PROPRE QUALITE, PAS CELLE DES AUTRES. Le serveur mesure
+           la gigue et la perte depuis ce qu'il recoit de nous ; lui seul peut
+           les connaitre.
+      */
+      derniereQualite = {
+        rtt: m.rtt, gigue: m.gigue, perte: m.perte, etat: m.etat,
+      }
+      console.log(`##voyage-reseau ${JSON.stringify(derniereQualite)}`)
+      log(M('qualite', m.rtt ?? '?', m.gigue ?? '?', m.perte === null || m.perte === undefined ? '?' : m.perte))
+      break
+
     case 'bienvenue':
       jeton = m.jeton
       monId = m.id
@@ -533,6 +644,7 @@ function texteDUnEvenement(m) {
 }
 
 function seConnecter() {
+  if (!hoteTrouve) return
   log(M('connexion', hote, port, nomJoueur))
   const message = {
     t: 'bonjour',
@@ -540,7 +652,7 @@ function seConnecter() {
     protocole: PROTOCOLE,
     version: '0.6.4',
     motDePasse,
-    capacites: ['anim', 'nameplate', 'pnj', 'inv', 'evenement', 'temps'],
+    capacites: ['anim', 'nameplate', 'pnj', 'inv', 'evenement', 'temps', 'reseau'],
   }
   if (clePublique && signature && identiteTs) {
     message.cle = clePublique
@@ -556,6 +668,32 @@ function seConnecter() {
      joueur est en jeu ; sans ca il faudrait quitter le jeu pour reprendre.
 */
 setInterval(() => {
+  /*
+    ⚠️ TANT QU'ON N'A PAS L'ADRESSE DE L'HOTE, DIRE BONJOUR NE SERT A RIEN. On
+       relance la demande au rendez-vous, et on abandonne au bout d'un moment
+       plutot que de laisser le joueur devant un ecran qui ne dit rien.
+  */
+  if (!hoteTrouve) {
+    if (!rdv) {
+      log(M('rdvSansAdresse'))
+      hoteTrouve = true
+      return
+    }
+    tentativesRdv++
+    if (tentativesRdv > 12) {
+      log(M('rdvAbandon'))
+      hoteTrouve = true
+      return
+    }
+    socket.send(
+      Buffer.from(JSON.stringify({ t: 'rdv-joindre', billet })),
+      rdv.port,
+      rdv.adresse,
+      () => {},
+    )
+    return
+  }
+
   if (!jeton) return seConnecter()
   envoyer({ t: 'ping', ts: Date.now() })
   if (derniereReponse && Date.now() - derniereReponse > 15000) {
@@ -882,4 +1020,13 @@ process.stdin.on('close', partir)
 process.stdin.on('error', () => {})
 process.stdin.resume()
 
-seConnecter()
+/*
+  ⚠️ AVEC UN BILLET, ON NE SE CONNECTE PAS TOUT DE SUITE. On demande d'abord
+     l'adresse au rendez-vous ; le battement s'en charge et relance si besoin.
+*/
+if (hoteTrouve) {
+  seConnecter()
+} else {
+  log(M('rdvDemande', billet))
+  socket.send(Buffer.from(JSON.stringify({ t: 'rdv-joindre', billet })), rdv.port, rdv.adresse, () => {})
+}

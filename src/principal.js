@@ -11,6 +11,10 @@ const ue4ss = require('./ue4ss')
 const sauvegardes = require('./sauvegardes')
 const identite = require('./identite')
 const heberger = require('./heberger')
+const maj = require('./maj')
+const soutien = require('./soutien')
+const administration = require('./administration')
+const invitation = require('./invitation')
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -28,6 +32,72 @@ const heberger = require('./heberger')
  */
 
 const RACINE = path.join(__dirname, '..')
+
+/*
+  LES LIENS D'INVITATION `voyage://`.
+
+  ⚠️ UNE SEULE INSTANCE, SINON LE LIEN OUVRE UN DEUXIEME LANCEUR. Windows lance
+     un nouveau processus a chaque clic sur un lien : sans verrou, le joueur se
+     retrouve avec deux lanceurs, deux ponts, et un tube nomme que le second ne
+     peut pas ouvrir.
+
+  ⚠️ LE LIEN NE PORTE JAMAIS DE MOT DE PASSE. Une URL se retrouve dans
+     l'historique, dans les journaux d'un salon Discord, dans un presse-papiers
+     partage. Il dit qu'un mot de passe est demande ; le lanceur le demande.
+*/
+const verrou = app.requestSingleInstanceLock()
+if (!verrou) {
+  app.quit()
+}
+
+/** Ce qu'un lien `voyage://` demande, en attendant que la page soit prete. */
+let invitationEnAttente = null
+
+/*
+  ⚠️ LA LECTURE DES LIENS VIT DANS `invitation.js`, PAS ICI. C'est du code qui
+     analyse une entrée venue de l'extérieur — un lien se clique sans réfléchir —
+     et ce genre de code doit pouvoir être mis à l'épreuve hors d'Electron.
+*/
+
+function proposerInvitation(invitation) {
+  if (!invitation) return
+  if (fenetre && !fenetre.isDestroyed()) {
+    fenetre.show()
+    fenetre.focus()
+    fenetre.webContents.send('invitation', invitation)
+    invitationEnAttente = null
+  } else {
+    invitationEnAttente = invitation
+  }
+}
+
+/*
+  ⚠️ EN DEVELOPPEMENT, IL FAUT DONNER LE CHEMIN DE L'EXECUTABLE ET L'ARGUMENT.
+     Sans ca, Windows enregistre `electron.exe` tout seul et le lien ouvre un
+     Electron vide au lieu du lanceur.
+*/
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('voyage', process.execPath, [path.resolve(process.argv[1])])
+  }
+} else {
+  app.setAsDefaultProtocolClient('voyage')
+}
+
+app.on('second-instance', (_e, arguments_) => {
+  proposerInvitation(invitation.dansLesArguments(arguments_))
+  if (fenetre && !fenetre.isDestroyed()) {
+    if (fenetre.isMinimized()) fenetre.restore()
+    fenetre.show()
+    fenetre.focus()
+  }
+})
+
+// macOS passe les liens par cet evenement ; Windows par la ligne de commande.
+app.on('open-url', (e, url) => {
+  e.preventDefault()
+  proposerInvitation(invitation.lire(url))
+})
 /** Nos mods, livres avec le lanceur. */
 const DOSSIER_MODS = path.join(RACINE, 'mods')
 
@@ -70,7 +140,11 @@ function creerFenetre() {
   heberger.surLigne((ligne) => {
     if (fenetre && !fenetre.isDestroyed()) fenetre.webContents.send('heberger:ligne', ligne)
   })
-  fenetre.once('ready-to-show', () => fenetre.show())
+  fenetre.once('ready-to-show', () => {
+    fenetre.show()
+    // Un lien cliqué avant que la fenêtre existe ne doit pas être perdu.
+    if (invitationEnAttente) proposerInvitation(invitationEnAttente)
+  })
 
   // Un lien externe s'ouvre dans le navigateur, jamais dans le lanceur.
   fenetre.webContents.setWindowOpenHandler(({ url }) => {
@@ -90,6 +164,7 @@ app.whenReady().then(() => {
     reprisesConnues: lireReglages().reprises,
   })
   heberger.poserContexte({ dossier: app.getPath('userData') })
+  administration.poserContexte({ dossier: app.getPath('userData') })
 
   /*
     ⚠️ LE JETON DE REPRISE S'ECRIT SUR DISQUE, PARCE QUE LE VRAI CAS D'USAGE
@@ -568,6 +643,8 @@ ipcMain.handle(
       motDePasse,
       langue: reglages.langue || 'fr',
       creatures: reglages.creatures || 'miroir',
+      plaques: reglages.plaques,
+      debug: reglages.debug === true,
     })
   }),
 )
@@ -604,6 +681,98 @@ ipcMain.handle(
   }),
 )
 
+// ── Mises a jour ────────────────────────────────────────────────────────────
+
+/*
+  ⚠️ ON REGARDE, ON NE TELECHARGE PAS. Un lanceur qui remplace son propre
+     executable pendant qu'une partie tourne est une mauvaise idee ; un lanceur
+     qui installe sans demander en est une pire.
+*/
+ipcMain.handle('maj:lanceur', repondre(async () => maj.verifierLanceur(app.getVersion())))
+
+/*
+  Le jeu a-t-il change sous nos pieds ?
+
+  ⚠️ ON RETIENT LE BUILD VU LA DERNIERE FOIS. Steam met a jour en silence : une
+     classe renommee et le mod se tait, sans la moindre erreur. C'est le pire
+     des echecs, celui qui ressemble a un bogue de chez le joueur.
+*/
+ipcMain.handle(
+  'maj:jeu',
+  repondre(async (_e, dossierJeu) => {
+    const actuel = maj.versionDuJeu(dossierJeu)
+    const r = lireReglages()
+    const verdict = maj.jeuAChange(actuel, r.jeuVu)
+    if (actuel && actuel.build && actuel.build !== r.jeuVu?.build) {
+      r.jeuVu = actuel
+      ecrireReglages(r)
+    }
+    return { ...verdict, actuel }
+  }),
+)
+
+// ── Pack de soutien ─────────────────────────────────────────────────────────
+
+ipcMain.handle(
+  'soutien:fabriquer',
+  repondre(async (_e, dossierJeu) => {
+    const r = lireReglages()
+    const etatH = heberger.etat()
+
+    // Ce que le serveur hebergé dit de lui-meme, s'il tourne.
+    let serveur = null
+    const a = heberger.adresseAdmin()
+    if (a) {
+      try {
+        const e = await fetch(`${a.base}/admin/etat`, {
+          headers: { 'X-Admin-Cle': a.cle },
+          signal: AbortSignal.timeout(2500),
+        })
+        if (e.ok) serveur = await e.json()
+      } catch {
+        /* le serveur ne repond pas : le pack le dira */
+      }
+    }
+
+    return soutien.fabriquer({
+      dossier: app.getPath('desktop'),
+      versionLanceur: app.getVersion(),
+      versionJeu: maj.versionDuJeu(dossierJeu),
+      dossierJeu,
+      etatJeu: dossierJeu ? await jeu.diagnostiquer(dossierJeu).catch(() => null) : null,
+      identite: identite.publique(app.getPath('userData')),
+      lien: lien.etat(),
+      hebergement: etatH,
+      serveur,
+      maj: await maj.verifierLanceur(app.getVersion()),
+      reglages: { langue: r.langue },
+    })
+  }),
+)
+
+// ── Administration a distance ───────────────────────────────────────────────
+
+/*
+  ⚠️ LES CLES NE SORTENT JAMAIS DU PROCESSUS PRINCIPAL. La page demande « les
+     joueurs du serveur X » ; c'est ici que la cle est ajoutee a la requete.
+*/
+ipcMain.handle(
+  'admin:poserCle',
+  repondre(async (_e, hote, port, cle) => administration.poserCle(hote, port, cle)),
+)
+ipcMain.handle('admin:configures', repondre(async () => administration.serveursConfigures()))
+ipcMain.handle('admin:joueurs', repondre(async (_e, hote, port) => administration.joueurs(hote, port)))
+ipcMain.handle('admin:etat', repondre(async (_e, hote, port) => administration.etat(hote, port)))
+ipcMain.handle('admin:sanctions', repondre(async (_e, hote, port) => administration.sanctions(hote, port)))
+ipcMain.handle(
+  'admin:commande',
+  repondre(async (_e, hote, port, texte) => administration.commande(hote, port, texte)),
+)
+ipcMain.handle(
+  'admin:annoncer',
+  repondre(async (_e, hote, port, texte) => administration.annoncer(hote, port, texte)),
+)
+
 // ── Hebergement maison ──────────────────────────────────────────────────────
 
 /*
@@ -626,6 +795,39 @@ ipcMain.handle(
     r.creatures = propre
     ecrireReglages(r)
     return { creatures: propre }
+  }),
+)
+
+/*
+  Les plaques de nom et le mode debug : des choix d'affichage, pas de serveur.
+
+  ⚠️ ILS NE PARTENT PAS SUR LE RESEAU. Ce qu'un joueur affiche au-dessus des
+     tetes ne regarde que lui ; le serveur n'en connait pas un mot.
+*/
+ipcMain.handle(
+  'reglages:plaques',
+  repondre(async (_e, options) => {
+    const r = lireReglages()
+    const o = options && typeof options === 'object' ? options : {}
+    r.plaques = {
+      noms: o.noms !== false,
+      distance: o.distance !== false,
+      ping: o.ping === true,
+      vie: o.vie === true,
+      portee: Math.min(Math.max(Number.parseInt(o.portee, 10) || 80, 5), 500),
+    }
+    ecrireReglages(r)
+    return r.plaques
+  }),
+)
+
+ipcMain.handle(
+  'reglages:debug',
+  repondre(async (_e, actif) => {
+    const r = lireReglages()
+    r.debug = actif === true
+    ecrireReglages(r)
+    return { debug: r.debug }
   }),
 )
 

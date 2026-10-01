@@ -42,6 +42,16 @@ const LIGNES_GARDEES = 400
 /** Au-delà, on considère que le serveur n'a pas démarré. */
 const DELAI_DEMARRAGE_MS = 20_000
 
+/**
+ * Le point de rendez-vous par défaut.
+ *
+ * ⚠️ C'EST UN SERVEUR PUBLIC, PAS UN SERVICE À PART. Nos serveurs publics ont
+ *    déjà une adresse joignable de partout : l'un d'eux tient le point de
+ *    rendez-vous, et c'est tout ce qu'il faut pour que les hôtes derrière une
+ *    box se fassent trouver.
+ */
+const RENDEZVOUS_PAR_DEFAUT = '144.217.162.237:30158'
+
 let processus = null
 let lignes = []
 let ecouteur = null
@@ -203,6 +213,7 @@ function etat() {
           maxJoueurs: reglagesCourants.maxJoueurs,
           protege: Boolean(reglagesCourants.motDePasse),
           public: Boolean(reglagesCourants.public),
+          percage: Boolean(reglagesCourants.percage),
           monde: reglagesCourants.monde ?? null,
         }
       : null,
@@ -269,6 +280,16 @@ async function demarrer(reglages) {
     MONDE_MOTDEPASSE: s.monde,
     ADMIN_CLE: s.admin,
     ANNUAIRE: reglages.public ? '1' : '0',
+
+    /*
+      ⚠️ LE PERCAGE EST CE QUI EVITE D'OUVRIR UN PORT SUR LA BOX. Le serveur
+         s'annonce a un point de rendez-vous public depuis SA PROPRE prise UDP,
+         et garde ainsi le chemin ouvert. Ça ne marche pas partout — un NAT dit
+         « symetrique » resiste — et le serveur le dit lui-meme dans son rapport
+         plutot que de laisser l'hote accuser ses amis.
+    */
+    PERCAGE: reglages.percage === false ? '0' : '1',
+    RENDEZVOUS_ADRESSE: String(reglages.rendezvous || RENDEZVOUS_PAR_DEFAUT).slice(0, 128),
     PAYS: String(reglages.pays || '').slice(0, 8),
     CYCLE_MINUTES: String(Math.min(Math.max(Number.parseInt(reglages.cycleMinutes, 10) || 0, 0), 240)),
   }
@@ -280,7 +301,15 @@ async function demarrer(reglages) {
   */
   if (reglages.empreinte) environnement.PROPRIETAIRES = String(reglages.empreinte).slice(0, 64)
 
-  reglagesCourants = { nom, port, maxJoueurs, motDePasse, public: Boolean(reglages.public), monde: monde?.nom ?? null }
+  reglagesCourants = {
+    nom,
+    port,
+    maxJoueurs,
+    motDePasse,
+    public: Boolean(reglages.public),
+    percage: reglages.percage !== false,
+    monde: monde?.nom ?? null,
+  }
 
   noter({ cle: 'heb.demarrage', valeurs: { nom, port } })
 
@@ -410,6 +439,7 @@ function commande(texte) {
 }
 
 module.exports = {
+  RENDEZVOUS_PAR_DEFAUT,
   poserContexte,
   demarrer,
   arreter,

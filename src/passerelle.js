@@ -36,6 +36,42 @@ contextBridge.exposeInMainWorld('voyage', {
        fonctions ne rendent que l'empreinte : c'est elle que l'hote d'un serveur
        inscrit dans `PROPRIETAIRES`, et elle ne permet rien a elle seule.
   */
+  // ── Mises a jour, soutien, administration a distance ─────────────────────
+  /*
+    ⚠️ LA PAGE NE DETIENT AUCUNE CLE. Elle demande « les joueurs du serveur X » ;
+       c'est le processus principal qui ajoute la cle d'administration a la
+       requete. Une page web qui detiendrait des cles est une page web qui peut
+       les perdre.
+  */
+  verifierMaj: () => ipcRenderer.invoke('maj:lanceur'),
+  versionDuJeu: (dossier) => ipcRenderer.invoke('maj:jeu', dossier),
+  packDeSoutien: (dossier) => ipcRenderer.invoke('soutien:fabriquer', dossier),
+
+  poserCleAdmin: (hote, port, cle) => ipcRenderer.invoke('admin:poserCle', hote, port, cle),
+  serveursAdministrables: () => ipcRenderer.invoke('admin:configures'),
+  adminJoueurs: (hote, port) => ipcRenderer.invoke('admin:joueurs', hote, port),
+  adminEtat: (hote, port) => ipcRenderer.invoke('admin:etat', hote, port),
+  adminCommande: (hote, port, texte) => ipcRenderer.invoke('admin:commande', hote, port, texte),
+  adminAnnoncer: (hote, port, texte) => ipcRenderer.invoke('admin:annoncer', hote, port, texte),
+
+  /*
+    ⚠️ ON NE REJOINT JAMAIS TOUT SEUL. Un lien `voyage://` PROPOSE ; c'est le
+       joueur qui accepte. Un lanceur qui se connecte au clic d'un lien est un
+       lanceur qu'on peut telecommander.
+  */
+  surInvitation: (rappel) => {
+    ipcRenderer.removeAllListeners('invitation')
+    ipcRenderer.on('invitation', (_e, i) => {
+      if (!i || typeof i !== 'object') return
+      rappel({
+        hote: typeof i.hote === 'string' ? i.hote : null,
+        port: Number.isInteger(i.port) ? i.port : null,
+        billet: typeof i.billet === 'string' ? i.billet : null,
+        protege: i.protege === true,
+      })
+    })
+  },
+
   identite: () => ipcRenderer.invoke('identite:lire'),
   regenererIdentite: () => ipcRenderer.invoke('identite:regenerer'),
 
@@ -83,6 +119,8 @@ contextBridge.exposeInMainWorld('voyage', {
   // ── Reglages ─────────────────────────────────────────────────────────────
   changerLangue: (langue) => ipcRenderer.invoke('reglages:langue', langue),
   changerCreatures: (mode) => ipcRenderer.invoke('reglages:creatures', mode),
+  changerPlaques: (options) => ipcRenderer.invoke('reglages:plaques', options),
+  changerDebug: (actif) => ipcRenderer.invoke('reglages:debug', actif),
   version: () => ipcRenderer.invoke('appli:version'),
   ouvrirDossier: (dossier) => ipcRenderer.invoke('dossier:ouvrir', dossier),
 

@@ -275,9 +275,76 @@ function ligneServeur(s) {
     })
   }
 
-  droite.append(etat, brancher, jouer, dernier)
+  /*
+    « Rejoins-moi » devrait être un lien qu'on colle dans Discord, pas une dictée
+    de douze chiffres. Le lien ne porte jamais le mot de passe : il dit seulement
+    qu'il y en a un.
+  */
+  const lien = document.createElement('button')
+  lien.className = 'action discret'
+  lien.textContent = T('serv.lien')
+  lien.addEventListener('click', async () => {
+    const url = `voyage://join/${s.hote}:${s.port}${s.motDePasse ? '?protege=1' : ''}`
+    try {
+      await navigator.clipboard.writeText(url)
+      dire(T('serv.lienCopie'), 'bon')
+    } catch {
+      dire(url, 'info')
+    }
+  })
+
+  /*
+    Administrer un serveur distant : la clé reste dans le processus principal,
+    la page ne fait que demander.
+  */
+  const administrer = document.createElement('button')
+  administrer.className = 'action discret'
+  administrer.textContent = T('serv.administrer')
+  administrer.addEventListener('click', () => ouvrirAdministration(s))
+
+  droite.append(etat, brancher, jouer, lien, administrer, dernier)
   ligne.append(gauche, droite)
   return ligne
+}
+
+/*
+  ⚠️ ON GARDE LA LISTE REÇUE ET ON FILTRE L'AFFICHAGE. Refaire un tour de réseau
+     pour cacher trois cartes serait lent, et ferait clignoter la liste à chaque
+     clic sur une case.
+*/
+let serveursRecus = []
+
+function filtrer(liste) {
+  const enLigne = $('filtre-enligne')?.checked
+  const libres = $('filtre-libres')?.checked
+  const ouverts = $('filtre-ouverts')?.checked
+
+  return liste.filter((s) => {
+    if (enLigne && !s.enLigne) return false
+    if (ouverts && s.motDePasse) return false
+    if (libres && s.enLigne && s.joueurs >= s.maxJoueurs) return false
+    return true
+  })
+}
+
+function peindreServeurs() {
+  const boite = $('liste-serveurs')
+  boite.textContent = ''
+
+  const liste = filtrer(serveursRecus)
+  if (liste.length === 0) {
+    const rien = document.createElement('div')
+    rien.className = 'vide'
+    rien.textContent = T(serveursRecus.length === 0 ? 'serv.aucun' : 'serv.aucunFiltre')
+    boite.append(rien)
+    return
+  }
+  for (const s of liste) boite.append(ligneServeur(s))
+}
+
+for (const id of ['filtre-enligne', 'filtre-libres', 'filtre-ouverts']) {
+  const champ = $(id)
+  if (champ) champ.addEventListener('change', peindreServeurs)
 }
 
 async function chargerServeurs() {
@@ -288,17 +355,8 @@ async function chargerServeurs() {
   vide.textContent = T('serv.interrogation')
   boite.append(vide)
 
-  const liste = deballer(await window.voyage.serveurs())
-  boite.textContent = ''
-
-  if (!liste || liste.length === 0) {
-    const rien = document.createElement('div')
-    rien.className = 'vide'
-    rien.textContent = T('serv.aucun')
-    boite.append(rien)
-    return
-  }
-  for (const s of liste) boite.append(ligneServeur(s))
+  serveursRecus = deballer(await window.voyage.serveurs()) ?? []
+  peindreServeurs()
 }
 
 /*
@@ -920,6 +978,58 @@ $('btn-ouvrir-jeu').addEventListener('click', async () => {
   deballer(await window.voyage.ouvrirDossier(dossierJeu))
 })
 
+// ── Administrer un serveur distant ──────────────────────────────────────────
+
+/*
+  ⚠️ LA CLÉ NE PASSE PAS PAR LA PAGE APRÈS AVOIR ÉTÉ POSÉE. On la donne une fois
+     au processus principal, qui la garde et l'ajoute lui-même aux requêtes. Une
+     page web qui détiendrait des clés d'administration est une page web qui peut
+     les perdre.
+
+  ⚠️ UNE CLÉ D'ADMINISTRATION N'EST PAS UN MOT DE PASSE DE SERVEUR. L'une ouvre
+     l'administration, l'autre laisse entrer en jeu : les confondre reviendrait à
+     donner la première à des joueurs.
+*/
+async function ouvrirAdministration(serveur) {
+  const r = deballer(await window.voyage.adminJoueurs(serveur.hote, serveur.port))
+
+  if (!r || r.ok === false) {
+    const cle = window.prompt(T('adm.demandeCle', { nom: serveur.nom ?? `${serveur.hote}:${serveur.port}` }))
+    if (cle === null) return
+    await window.voyage.poserCleAdmin(serveur.hote, serveur.port, cle)
+    const encore = deballer(await window.voyage.adminJoueurs(serveur.hote, serveur.port))
+    if (!encore || encore.ok === false) return
+    return montrerAdministration(serveur, encore.corps)
+  }
+
+  montrerAdministration(serveur, r.corps)
+}
+
+function montrerAdministration(serveur, corps) {
+  const joueurs = corps?.joueurs ?? []
+  const lignes = joueurs.length
+    ? joueurs
+        .map((j) => {
+          const q = j.qualite
+          const lien = q && q.rtt !== null ? ` ${q.rtt} ms` : ''
+          const perte = q && q.perte !== null && q.perte !== undefined ? `, ${q.perte} % perdu` : ''
+          return `${j.nom}${j.hote ? ' (hôte)' : ''}${lien}${perte}`
+        })
+        .join('\n')
+    : T('heb.personne')
+
+  const quoi = window.prompt(
+    T('adm.invite', { nom: serveur.nom ?? `${serveur.hote}:${serveur.port}`, joueurs: lignes }),
+    '/joueurs',
+  )
+  if (quoi === null) return
+
+  window.voyage.adminCommande(serveur.hote, serveur.port, quoi).then((rep) => {
+    const texte = deballer(rep)
+    if (texte && texte.ok !== false) dire(String(texte.corps?.reponse ?? 'fait').slice(0, 240), 'bon')
+  })
+}
+
 // ── Héberger depuis chez soi ────────────────────────────────────────────────
 
 /*
@@ -1015,6 +1125,26 @@ async function lireLesJoueursHeberges() {
   } else if (a.derniereErreur) {
     $('heb-annuaire').textContent = T('heb.annuaireNon', { raison: a.derniereErreur, port })
   }
+
+  /*
+    ⚠️ LE BILLET DOIT SE VOIR, ET UN PERÇAGE MORT AUSSI. Sans cette ligne, le
+       billet n'existait que dans une ligne de console qui défile, et un
+       rendez-vous qui refuse passait inaperçu : l'hôte aurait attendu des amis
+       qui ne pouvaient pas entrer, sans jamais savoir pourquoi.
+  */
+  const pc = d.percage
+  const champPercage = $('heb-percage')
+  if (!pc || !pc.actif) {
+    champPercage.textContent = pc && pc.refus
+      ? T('heb.percageRefus', { raison: pc.refusExplique || pc.refus })
+      : T('heb.percageEteint', { port })
+  } else if (pc.symetrique) {
+    champPercage.textContent = T('heb.percageSymetrique', { port })
+  } else if (pc.billet) {
+    champPercage.textContent = T('heb.percageBillet', { billet: pc.billet })
+  } else {
+    champPercage.textContent = T('heb.percageAttente')
+  }
 }
 
 $('btn-heb-demarrer').addEventListener('click', async () => {
@@ -1069,6 +1199,108 @@ $('heb-commande-forme').addEventListener('submit', async (e) => {
   if (!r || !r.ok) champ.value = texte
 })
 
+// ── Invitation reçue par un lien `voyage://` ────────────────────────────────
+
+/*
+  ⚠️ ON PROPOSE, ON NE REJOINT PAS. Un lanceur qui se brancherait au clic d'un
+     lien serait un lanceur qu'on peut télécommander : il suffirait d'un lien
+     dans un salon public pour envoyer des gens n'importe où.
+*/
+let invitationCourante = null
+
+window.voyage.surInvitation((i) => {
+  invitationCourante = i
+  const protege = i.protege ? T('inv.protege') : ''
+  $('invitation-detail').textContent = i.billet
+    ? T('inv.billet', { billet: i.billet, protege })
+    : T('inv.adresse', { adresse: `${i.hote}:${i.port}`, protege })
+  $('invitation').hidden = false
+})
+
+$('btn-invitation-ignorer').addEventListener('click', () => {
+  invitationCourante = null
+  $('invitation').hidden = true
+})
+
+$('btn-invitation-rejoindre').addEventListener('click', async () => {
+  const i = invitationCourante
+  if (!i) return
+  $('invitation').hidden = true
+  invitationCourante = null
+
+  if (i.billet) {
+    // Un billet se saisit dans le champ d'ajout : le lanceur sait le chercher.
+    const bouton = document.querySelector('nav button[data-onglet="serveurs"]')
+    if (bouton) bouton.click()
+    $('adresse').value = i.billet
+    dire(T('inv.billetSaisi', { billet: i.billet }), 'info')
+    return
+  }
+
+  const motDePasse = i.protege ? window.prompt(T('serv.motDePasse', { nom: `${i.hote}:${i.port}` })) : ''
+  if (i.protege && motDePasse === null) return
+  const r = deballer(await window.voyage.connecter(i.hote, i.port, motDePasse ?? ''))
+  if (!r) return
+  cibleCourante = r.cible
+  montrerLien(r)
+  dire(T('lien.demarre'), 'bon')
+})
+
+// ── Mises à jour et pack de soutien ─────────────────────────────────────────
+
+async function verifierMisesAJour(silencieux) {
+  const r = deballer(await window.voyage.verifierMaj())
+  if (!r) return
+
+  /*
+    ⚠️ « ON NE SAIT PAS » N'EST PAS « À JOUR ». Afficher un rassurant « à jour »
+       après un échec réseau est exactement le mensonge qui laisse les gens sur
+       une vieille version pendant des mois.
+  */
+  if (r.aJour === null) {
+    $('maj-lanceur').textContent = T('maj.echec', { raison: r.raison ?? '?' })
+    $('btn-maj-telecharger').hidden = true
+    return
+  }
+
+  if (r.aJour) {
+    $('maj-lanceur').textContent = T('maj.aJour', { v: r.versionLocale })
+    $('btn-maj-telecharger').hidden = true
+    return
+  }
+
+  $('maj-lanceur').textContent = T('maj.disponible', { v: r.versionLocale, nouvelle: r.versionDistante })
+  $('btn-maj-telecharger').hidden = false
+  if (!silencieux) dire(T('maj.disponible', { v: r.versionLocale, nouvelle: r.versionDistante }), 'info')
+}
+
+$('btn-maj-verifier').addEventListener('click', () => verifierMisesAJour(false))
+
+$('btn-maj-telecharger').addEventListener('click', () => {
+  window.open('https://caretakermp.symbioseheritage.ca/#telecharger', '_blank')
+})
+
+async function verifierLeJeu() {
+  if (!dossierJeu) return
+  const r = deballer(await window.voyage.versionDuJeu(dossierJeu))
+  if (!r || !r.actuel?.build) return
+
+  if (r.change) {
+    $('maj-jeu').textContent = T('maj.jeuChange', { avant: r.buildPrecedent, build: r.build })
+    dire(T('maj.jeuChange', { avant: r.buildPrecedent, build: r.build }), 'erreur')
+  } else if (r.connu) {
+    $('maj-jeu').textContent = T('maj.jeuConnu', { build: r.build })
+  } else {
+    $('maj-jeu').textContent = T('maj.jeuPremier', { build: r.actuel.build })
+  }
+}
+
+$('btn-soutien').addEventListener('click', async () => {
+  const r = deballer(await window.voyage.packDeSoutien(dossierJeu))
+  if (!r) return
+  dire(T('sout.fait', { nom: r.chemin.split(/[\\/]/).pop() }), 'bon')
+})
+
 // ── Demarrage ───────────────────────────────────────────────────────────────
 
 ;(async () => {
@@ -1098,6 +1330,35 @@ $('heb-commande-forme').addEventListener('submit', async (e) => {
        toucherait rien, et laisser croire le contraire serait pire que de le
        dire. F2 en jeu, lui, bascule tout de suite.
   */
+  /*
+    ⚠️ CES RÉGLAGES NE S'APPLIQUENT QU'À LA PROCHAINE CONNEXION. Ils partent au
+       pont au moment où il démarre ; les changer pendant qu'une partie tourne ne
+       toucherait rien, et laisser croire le contraire serait pire que de le dire.
+  */
+  const pl = reglages?.plaques ?? {}
+  $('pl-noms').checked = pl.noms !== false
+  $('pl-distance').checked = pl.distance !== false
+  $('pl-ping').checked = pl.ping === true
+  $('pl-vie').checked = pl.vie === true
+  $('pl-portee').value = pl.portee ?? 80
+  $('dbg-actif').checked = reglages?.debug === true
+
+  const poserPlaques = async () => {
+    await window.voyage.changerPlaques({
+      noms: $('pl-noms').checked,
+      distance: $('pl-distance').checked,
+      ping: $('pl-ping').checked,
+      vie: $('pl-vie').checked,
+      portee: $('pl-portee').value,
+    })
+  }
+  for (const id of ['pl-noms', 'pl-distance', 'pl-ping', 'pl-vie', 'pl-portee']) {
+    $(id).addEventListener('change', poserPlaques)
+  }
+  $('dbg-actif').addEventListener('change', async (e) => {
+    await window.voyage.changerDebug(e.target.checked)
+  })
+
   $('choix-creatures').value = reglages?.creatures ?? 'miroir'
   $('choix-creatures').addEventListener('change', async (e) => {
     await window.voyage.changerCreatures(e.target.value)
@@ -1118,6 +1379,14 @@ $('heb-commande-forme').addEventListener('submit', async (e) => {
   $('heb-public').checked = Boolean(h.public)
 
   montrerHebergement(deballer(await window.voyage.etatHebergement()))
+
+  /*
+    ⚠️ LA VÉRIFICATION DE VERSION NE DOIT PAS RETENIR LE DÉMARRAGE. Hors ligne,
+       le lanceur s'ouvre exactement pareil ; la carte dira simplement qu'elle
+       n'a pas pu savoir.
+  */
+  verifierMisesAJour(true)
+  verifierLeJeu()
 
   const etatLien = deballer(await window.voyage.etatLien())
   if (etatLien) {

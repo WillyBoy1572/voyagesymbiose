@@ -53,6 +53,9 @@ const FICHIERS_SERVEUR = [
   'src/ressources.js',
   'src/transport.js',
   'src/annuaire.js',
+  'src/reseau.js',
+  'src/rendezvous.js',
+  'src/percage.js',
 ]
 
 const MODS = ['VoyageLien', 'VoyageSonde']

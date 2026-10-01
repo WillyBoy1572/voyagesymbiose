@@ -114,7 +114,18 @@ function cibleComplete() {
      vient de le taper pour se connecter ; le redemander a chaque action
      lancee depuis le jeu serait absurde. Il part avec le processus.
 */
-function demarrer({ hote, port, nom, motDePasse = '', langue = 'fr', creatures = 'miroir' }) {
+function demarrer({
+  hote,
+  port,
+  nom,
+  motDePasse = '',
+  langue = 'fr',
+  creatures = 'miroir',
+  plaques = null,
+  debug = false,
+  billet = '',
+  rendezvous = '',
+}) {
   if (actif()) arreter()
 
   const adresse = `${hote}:${port}`
@@ -127,6 +138,29 @@ function demarrer({ hote, port, nom, motDePasse = '', langue = 'fr', creatures =
        decide de ce qu'il voit. En jeu, F2 bascule sans passer par ici.
   */
   arguments_.push('--creatures', ['miroir', 'annonce', 'rien'].includes(creatures) ? creatures : 'miroir')
+
+  /*
+    ⚠️ LES PLAQUES SONT UN CHOIX LOCAL, COMME LE MIROIR. Ce que le joueur
+       affiche au-dessus des tetes ne part pas sur le reseau : le pont le porte
+       jusqu'au mod, et s'arrete la.
+  */
+  if (plaques) {
+    arguments_.push('--plaques', plaques.noms === false ? 'non' : 'oui')
+    arguments_.push('--plaques-distance', plaques.distance === false ? 'non' : 'oui')
+    arguments_.push('--plaques-ping', plaques.ping ? 'oui' : 'non')
+    arguments_.push('--plaques-vie', plaques.vie ? 'oui' : 'non')
+    arguments_.push('--plaques-portee', String(plaques.portee ?? 80))
+  }
+  if (debug) arguments_.push('--debug', 'oui')
+
+  /*
+    ⚠️ AVEC UN BILLET, L'ADRESSE N'EST PAS CONNUE D'AVANCE. C'est le point de
+       rendez-vous qui la donne, apres avoir fait percer les deux cotes. Le pont
+       attend donc avant de dire bonjour.
+  */
+  if (billet && rendezvous) {
+    arguments_.push('--billet', billet, '--rendezvous', rendezvous)
+  }
 
   /*
     ⚠️ LE LANCEUR SIGNE, LE PONT PORTE. La cle privee ne passe JAMAIS en

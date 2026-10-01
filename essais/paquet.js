@@ -64,6 +64,15 @@ for (const f of [
        exactement le genre de panne qu'on ne voit qu'en production.
   */
   'src/heberger.js',
+  /*
+    ⚠️ CHACUN DE CES QUATRE PORTE UNE FONCTIONNALITÉ ENTIÈRE. Oublié dans le
+       paquet, le bouton correspondant ne fait rien — et c'est le genre de panne
+       qu'on ne voit qu'une fois l'installeur distribué.
+  */
+  'src/maj.js',
+  'src/soutien.js',
+  'src/administration.js',
+  'src/invitation.js',
 ]) {
   ok(dedans(path.basename(f)), `${f} est dans le paquet`)
 }

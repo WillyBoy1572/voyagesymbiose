@@ -2,6 +2,7 @@
 
 const crypto = require('node:crypto')
 const { encoder } = require('./protocole')
+const { Qualite } = require('./reseau')
 const journal = require('./journal')
 
 /**
@@ -80,6 +81,8 @@ class Joueur {
     this.fenetre = Date.now()
     /** Ce que le mod a reussi a faire dans le jeu. Sert au diagnostic. */
     this.faits = {}
+    /** Gigue, perte, aller-retour : ce que le joueur subit vraiment. */
+    this.qualite = new Qualite()
   }
 
   /** Ce que les autres joueurs ont le droit de savoir. */
@@ -102,6 +105,19 @@ class Joueur {
       vie: this.vie,
       posture: this.posture,
     }
+  }
+
+  /**
+   * Ce client sait-il quoi faire de ce genre de message ?
+   *
+   * ⚠️ UN CLIENT QUI N'ANNONCE RIEN RECOIT TOUT. C'est le cas de tous les
+   *    clients d'avant la negociation : les priver de creatures ou d'evenements
+   *    parce qu'ils n'ont pas su le demander serait casser ce qui marchait.
+   *    On ne filtre que ceux qui ont EXPLICITEMENT dit ce qu'ils savaient faire.
+   */
+  sait(quoi) {
+    if (this.capacites.size === 0) return true
+    return this.capacites.has(quoi)
   }
 
   /**
@@ -268,6 +284,23 @@ class Session {
     // Reconnexion depuis la meme adresse et le meme port : on remplace.
     const ancien = this.parAdresse(adresse, port)
     if (ancien) this.retirer(ancien, 'reconnexion')
+
+    /*
+      ⚠️ UNE IDENTITE NE PEUT PAS ETRE A DEUX ENDROITS. Sans ca, le meme joueur
+         pouvait ouvrir deux sessions : deux pions a son nom, deux positions
+         ecrites a tour de role dans le meme profil, et un bannissement qui ne
+         coupait qu'une des deux. La NOUVELLE connexion gagne — c'est le cas du
+         joueur qui a plante et qui revient, et c'est lui qui a la main.
+    */
+    if (empreinte) {
+      for (const autre of [...this.joueurs.values()]) {
+        if (autre.empreinte === empreinte) {
+          journal.avis(`${autre.nom} remplacé par une nouvelle connexion de la même identité.`)
+          this.envoyerA(autre, { t: 'expulse', raison: 'remplacé par une autre connexion' })
+          this.retirer(autre, 'identité reprise ailleurs')
+        }
+      }
+    }
 
     const nom = this.#nomLibre(message.nom)
     const joueur = new Joueur({
@@ -467,6 +500,7 @@ class Session {
     if (!this.evenements) return 0
     let combien = 0
     for (const j of this.joueurs.values()) {
+      if (!j.sait('evenement')) continue
       if (!this.evenements.concerne(evenement, j)) continue
       this.envoyerA(j, evenement)
       combien++
@@ -572,7 +606,7 @@ class Session {
         const proches = this.entites.pour(j, this.tick)
         if (proches) paquet.entites = proches
       }
-      if (!sansPnj) {
+      if (!sansPnj && j.sait('pnj')) {
         const creatures = this.pnj.pour(j, this.tick)
         if (creatures) paquet.pnj = creatures
       }

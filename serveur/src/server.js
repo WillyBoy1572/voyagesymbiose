@@ -39,6 +39,8 @@ const { Temps } = require('./temps')
 const { Mesures } = require('./mesures')
 const { Ressources } = require('./ressources')
 const { Annuaire } = require('./annuaire')
+const { RendezVous } = require('./rendezvous')
+const { Percage } = require('./percage')
 const { Session } = require('./session')
 const { executer } = require('./commandes')
 const { creerHttp } = require('./http')
@@ -62,6 +64,22 @@ const sauvegardes = new Sauvegardes(config, dire)
 const temps = new Temps(config, monde, (t) => session.annoncer(t))
 
 const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true })
+
+/** Envoi direct, hors session : sert au rendez-vous et au percage. */
+function envoyerBrut(objet, port, adresse) {
+  const tampon = encoder(objet)
+  mesures.envoye(tampon.length)
+  socket.send(tampon, port, adresse, () => {})
+}
+
+/*
+  ⚠️ LE RENDEZ-VOUS ET LE PERCAGE PARTAGENT LA PRISE UDP DU JEU, ET C'EST TOUT
+     LE PRINCIPE. La box associe le port interne du JEU a un port public : c'est
+     cette association-la qu'il faut garder ouverte. Faite depuis une seconde
+     prise, elle ouvrirait un trou vers un port qui ne sert a rien.
+*/
+const rendezvous = new RendezVous(config, envoyerBrut, dire)
+const percage = new Percage(config, envoyerBrut, dire)
 
 const session = new Session(
   config,
@@ -141,6 +159,19 @@ function traiter(tampon, adresse, port) {
   const brut = decoder(tampon)
   if (!brut) return mesures.refuse()
 
+  /*
+    ⚠️ LES MESSAGES DE RENDEZ-VOUS PASSENT AVANT LA SESSION, PAR DEFINITION. Ils
+       servent a se trouver AVANT d'avoir la moindre session : leur demander un
+       jeton n'aurait aucun sens. En echange ils ne lisent aucun etat de partie,
+       ne modifient rien, et ne repondent qu'a l'adresse qui a ecrit — donc
+       aucune amplification possible.
+  */
+  if (typeof brut.t === 'string' && brut.t.startsWith('rdv-')) {
+    if (percage.traiter(brut, adresse, port)) return
+    if (rendezvous.traiter(brut, adresse, port)) return
+    return mesures.refuse()
+  }
+
   const message = valider(brut)
   if (!message) return mesures.refuse()
 
@@ -169,6 +200,12 @@ function traiter(tampon, adresse, port) {
            personnage tremblerait devant les autres joueurs.
       */
       if (message.seq < joueur.seq) return
+      /*
+        ⚠️ ON MESURE AVANT D'ECRASER. Les trous dans la numerotation sont la
+           seule facon de connaitre la perte : une fois `joueur.seq` remplace,
+           l'information a disparu.
+      */
+      joueur.qualite.sequence(message.seq)
       joueur.seq = message.seq
       joueur.pos = message.pos
       joueur.rot = message.rot
@@ -363,10 +400,15 @@ function traiter(tampon, adresse, port) {
       return
     }
 
-    case 'ping':
+    case 'ping': {
       session.envoyerA(joueur, { t: 'pong', ts: message.ts, serveur: Date.now() })
-      if (message.ts > 0) joueur.ping = Math.max(0, Math.min(Date.now() - message.ts, 60_000))
+      if (message.ts > 0) {
+        const allerRetour = Math.max(0, Math.min(Date.now() - message.ts, 60_000))
+        joueur.ping = allerRetour
+        joueur.qualite.allerRetour(allerRetour)
+      }
       return
+    }
 
     /** Ce que le mod a reussi a faire. Pur diagnostic : rien n'en depend. */
     case 'sonde':
@@ -536,6 +578,8 @@ function demarrer() {
 
   socket.bind(config.port, config.hote, () => {
     const http = creerHttp(config, session, monde, sauvegardes, {
+      rendezvous,
+      percage,
       mesures,
       entites,
       pnj,
@@ -555,6 +599,8 @@ function demarrer() {
       journal.info(`monde et navigateur : TCP ${config.hote}:${config.portHttp}`)
       journal.info(`${config.maxJoueurs} places, ${config.hz} instantanés/s${config.motDePasse ? ', mot de passe actif' : ''}`)
       journal.info(`transport : ${transport.choisir().nom}`)
+      if (config.percage) journal.info(`perçage actif vers ${config.rendezvousAdresse || '(adresse manquante)'}`)
+      if (config.rendezvous) journal.info('point de rendez-vous actif sur ce port.')
       if (config.cycleMinutes) journal.info(`cycle jour/nuit : ${config.cycleMinutes} min de jeu par minute réelle`)
       if (permissions.proprietaires.size) {
         journal.info(`${permissions.proprietaires.size} propriétaire(s) déclaré(s) par empreinte.`)
@@ -562,6 +608,8 @@ function demarrer() {
 
       ressources.chargerTout()
       annuaire.demarrer()
+      rendezvous.demarrer()
+      percage.demarrer(() => session.etat())
       ressources.emettre('demarrage')
 
       minuterieInstantanes = setInterval(() => session.instantane(), Math.round(1000 / config.hz))
@@ -575,7 +623,20 @@ function demarrer() {
         activites.balayer()
         inventaires.balayer()
         moderation.balayer()
+        rendezvous.balayer()
         mesures.seconde()
+
+        /*
+          ⚠️ CHACUN RECOIT SA PROPRE QUALITE DE LIEN, PAS CELLE DES AUTRES. Un
+             joueur n'a aucune raison de connaitre la gigue de son voisin, et
+             c'est la sienne qui explique ce qu'il voit a l'ecran.
+        */
+        if (session.tick % (config.hz * 5) < config.hz) {
+          for (const j of session.joueurs.values()) {
+            if (!j.sait('reseau')) continue
+            session.envoyerA(j, { t: 'reseau', ...j.qualite.rapport(), etat: j.qualite.etat })
+          }
+        }
         temps.avancer()
         temps.evoluerMeteo()
 
@@ -642,6 +703,7 @@ function arreter(code = 0) {
   }
 
   try {
+    percage.arreter()
     annuaire.arreter()
   } catch {
     /* un annuaire injoignable ne retient pas l'arret */
