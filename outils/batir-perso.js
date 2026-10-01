@@ -38,7 +38,18 @@ const { execFileSync } = require('node:child_process')
  */
 
 const RACINE = path.join(__dirname, '..')
-const SOURCE_SONDE = path.resolve(RACINE, '..', 'symbiose-voyage', 'jeu', 'VoyageSondeMax')
+/*
+  ⚠️ DEUX ENDROITS, DANS CET ORDRE. Le dépôt du serveur est la source de
+     vérité (c'est là que vivent les mods) ; `outils/sonde-max` en est la copie
+     versionnée, pour que le fichier ne tienne pas sur un seul disque. Sur une
+     machine qui n'a que le dépôt du lanceur, c'est la seconde qui sert.
+*/
+const SOURCES_SONDE = [
+  path.resolve(RACINE, '..', 'symbiose-voyage', 'jeu', 'VoyageSondeMax'),
+  path.join(RACINE, 'outils', 'sonde-max'),
+]
+const SOURCE_SONDE =
+  SOURCES_SONDE.find((d) => fs.existsSync(path.join(d, 'Scripts', 'main.lua'))) ?? SOURCES_SONDE[0]
 const CIBLE_SONDE = path.join(RACINE, 'mods', 'VoyageSondeMax')
 const CONFIG = path.join(RACINE, 'electron-builder-perso.json')
 

@@ -117,6 +117,21 @@ function principal() {
     )
   }
 
+  // ⚠️ LA SONDE MAX VA DANS `outils/`, PAS DANS `mods/`. La liste `build.files`
+  //    du paquet prend tout le dossier `mods` : l'y poser la ferait partir dans
+  //    le lanceur public. Dans `outils/`, elle est versionnée — son seul
+  //    exemplaire était sur un disque — et `batir-perso.js` est le seul à aller
+  //    la chercher.
+  //
+  // ⚠️ ET ON N'ÉCRIT PAS DE MOTIF GLOB DANS UN COMMENTAIRE BLOC : la séquence
+  //    étoile-barre le referme au milieu d'une phrase, et le fichier ne se
+  //    charge plus. C'est ce qui vient d'arriver.
+  console.log('\n  sonde max (hors paquet) :')
+  copier(
+    path.join(SOURCE, 'jeu', 'VoyageSondeMax', 'Scripts', 'main.lua'),
+    path.join(RACINE, 'outils', 'sonde-max', 'Scripts', 'main.lua'),
+  )
+
   console.log('\n  pont :')
   copier(path.join(SOURCE, 'pont', 'pont.js'), path.join(RACINE, 'pont', 'pont.js'))
 
