@@ -160,4 +160,4 @@ class Evenements {
   }
 }
 
-module.exports = { Evenements, GENRES, GESTES, PAR_SECONDE }
+module.exports = { Evenements, GESTES }

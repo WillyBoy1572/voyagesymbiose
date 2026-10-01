@@ -136,6 +136,9 @@ contextBridge.exposeInMainWorld('voyage', {
 
   // ── Le lien avec le serveur ──────────────────────────────────────────────
   enregistrerNom: (nom) => ipcRenderer.invoke('reglages:nom', nom),
+  telechargerMaj: () => ipcRenderer.invoke('maj:telecharger'),
+  installerMaj: () => ipcRenderer.invoke('maj:installer'),
+  surAvancementMaj: (f) => ipcRenderer.on('maj:avancement', (_e, c) => f(c)),
   connecter: (hote, port, motDePasse, billet) =>
     ipcRenderer.invoke('lien:connecter', hote, port, motDePasse, billet),
   deconnecter: () => ipcRenderer.invoke('lien:deconnecter'),

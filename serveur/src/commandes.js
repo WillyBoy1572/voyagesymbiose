@@ -808,4 +808,4 @@ function executer(session, joueur, ligne) {
   }
 }
 
-module.exports = { executer, COMMANDES, distance, cap, trouverJoueur, CARDINAUX }
+module.exports = { executer, COMMANDES, distance, cap, trouverJoueur }

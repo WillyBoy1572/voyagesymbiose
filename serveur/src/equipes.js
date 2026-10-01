@@ -153,4 +153,4 @@ class Equipes {
   }
 }
 
-module.exports = { Equipes, COULEURS, MAX_EQUIPES }
+module.exports = { Equipes }

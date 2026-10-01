@@ -129,4 +129,4 @@ function rapport() {
   }
 }
 
-module.exports = { CHEMINS, choisir, rapport }
+module.exports = { choisir, rapport }

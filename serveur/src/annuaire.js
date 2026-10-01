@@ -251,4 +251,4 @@ class Annuaire {
   }
 }
 
-module.exports = { Annuaire, PERIODE_MS }
+module.exports = { Annuaire }

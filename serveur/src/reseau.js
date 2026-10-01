@@ -155,4 +155,4 @@ class Qualite {
   }
 }
 
-module.exports = { Qualite, ECHANTILLONS_RTT, FENETRE_SEQUENCE }
+module.exports = { Qualite }

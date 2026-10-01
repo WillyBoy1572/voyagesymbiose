@@ -1,6 +1,9 @@
 'use strict'
 
+const crypto = require('node:crypto')
 const fs = require('node:fs')
+const https = require('node:https')
+const os = require('node:os')
 const path = require('node:path')
 
 /**
@@ -60,6 +63,18 @@ function comparerVersions(a, b) {
   }
   return 0
 }
+
+/** La base d'ou on accepte de telecharger. Rien d'autre.
+ *
+ * ⚠️ ON NE SUIT PAS L'URL DONNEE PAR LA REPONSE. Le manifeste dit un nom de
+ *    fichier ; c'est NOUS qui construisons l'adresse, a partir d'une base ecrite
+ *    en dur. Sinon il suffirait de servir un manifeste pointant ailleurs pour
+ *    faire telecharger et EXECUTER n'importe quoi sur la machine du joueur.
+ */
+const BASE_TELECHARGEMENT = 'https://caretakermp.symbioseheritage.ca/telecharger/'
+
+/** Un nom de fichier qu'on accepte de poser sur le disque. */
+const NOM_INSTALLEUR = /^[A-Za-z0-9._-]{1,120}\.exe$/
 
 /**
  * Y a-t-il une version plus récente que la nôtre ?
@@ -150,4 +165,73 @@ function jeuAChange(actuel, connu) {
   }
 }
 
-module.exports = { verifierLanceur, versionDuJeu, jeuAChange, comparerVersions, APPID, SOURCE }
+/**
+ * Telecharge l'installeur annonce et verifie son empreinte.
+ *
+ * ⚠️ ON VERIFIE AVANT DE RENDRE LE CHEMIN, PAS APRES L'AVOIR LANCE. Ce fichier
+ *    va etre EXECUTE : une coupure de reseau, un cache d'operateur ou un miroir
+ *    hostile donnent le meme symptome -- un fichier qui n'est pas le notre. Sans
+ *    empreinte publiee, on refuse purement et simplement.
+ *
+ * ⚠️ ON ECRIT DANS UN FICHIER TEMPORAIRE PUIS ON RENOMME. Un telechargement
+ *    interrompu laisserait sinon un .exe tronque que quelqu'un finirait par
+ *    double-cliquer.
+ */
+async function telechargerLanceur(info, surAvancement = () => {}) {
+  if (!info || typeof info.nom !== 'string' || !NOM_INSTALLEUR.test(info.nom)) {
+    throw Object.assign(new Error('nom de fichier refus\u00e9'), { cle: 'err.majNom' })
+  }
+  if (typeof info.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(info.sha256)) {
+    throw Object.assign(new Error('aucune empreinte publi\u00e9e'), { cle: 'err.majSansEmpreinte' })
+  }
+
+  const dossier = path.join(os.tmpdir(), 'voyage-lanceur', 'maj')
+  fs.mkdirSync(dossier, { recursive: true })
+  const cible = path.join(dossier, info.nom)
+  const abri = cible + '.part'
+  fs.rmSync(abri, { force: true })
+
+  const url = BASE_TELECHARGEMENT + encodeURIComponent(info.nom)
+  const empreinte = crypto.createHash('sha256')
+  let recu = 0
+
+  await new Promise((resolve, rejeter) => {
+    const requete = https.get(url, { timeout: 120_000 }, (reponse) => {
+      /*
+        ⚠️ AUCUNE REDIRECTION. On sait ou est le fichier ; suivre un `302`
+           reviendrait a laisser le serveur choisir ce qu'on execute.
+      */
+      if (reponse.statusCode !== 200) {
+        reponse.resume()
+        rejeter(new Error(`HTTP ${reponse.statusCode}`))
+        return
+      }
+      const total = Number.parseInt(reponse.headers['content-length'] || '0', 10) || info.taille || 0
+      const sortie = fs.createWriteStream(abri)
+      reponse.on('data', (m) => {
+        empreinte.update(m)
+        recu += m.length
+        surAvancement(recu, total)
+      })
+      reponse.pipe(sortie)
+      sortie.on('finish', () => sortie.close(resolve))
+      sortie.on('error', rejeter)
+    })
+    requete.on('timeout', () => requete.destroy(new Error('d\u00e9lai d\u00e9pass\u00e9')))
+    requete.on('error', rejeter)
+  })
+
+  const vu = empreinte.digest('hex')
+  if (vu.toLowerCase() !== info.sha256.toLowerCase()) {
+    fs.rmSync(abri, { force: true })
+    throw Object.assign(new Error('empreinte diff\u00e9rente'), { cle: 'err.majEmpreinte' })
+  }
+
+  fs.rmSync(cible, { force: true })
+  fs.renameSync(abri, cible)
+  return { chemin: cible, octets: recu, sha256: vu }
+}
+
+module.exports = {
+  telechargerLanceur,
+  BASE_TELECHARGEMENT, verifierLanceur, versionDuJeu, jeuAChange, comparerVersions, APPID, SOURCE }

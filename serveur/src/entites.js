@@ -256,4 +256,4 @@ class Entites {
   }
 }
 
-module.exports = { Entites, BANDES, TYPES }
+module.exports = { Entites, BANDES }

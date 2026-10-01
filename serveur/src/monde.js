@@ -130,4 +130,4 @@ class Monde {
   }
 }
 
-module.exports = { Monde, MAX_REPERES, MAX_CHECKPOINTS }
+module.exports = { Monde }

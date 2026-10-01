@@ -169,4 +169,4 @@ class Activites {
   }
 }
 
-module.exports = { Activites, ETATS, MAX_ACTIVITES, MAX_ETAPES }
+module.exports = { Activites }

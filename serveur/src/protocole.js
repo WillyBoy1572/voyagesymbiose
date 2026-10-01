@@ -409,7 +409,5 @@ module.exports = {
   vecteur,
   petiteTable,
   TAILLE_MAX,
-  LIMITES,
-  BORNE_MONDE,
   CANAUX,
 }

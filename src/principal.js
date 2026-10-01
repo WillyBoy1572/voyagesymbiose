@@ -4,6 +4,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const path = require('node:path')
 const fs = require('node:fs')
 const os = require('node:os')
+const { spawn } = require('node:child_process')
 const jeu = require('./jeu')
 const serveurs = require('./serveurs')
 const lien = require('./lien')
@@ -701,6 +702,53 @@ ipcMain.handle(
      qui installe sans demander en est une pire.
 */
 ipcMain.handle('maj:lanceur', repondre(async () => maj.verifierLanceur(app.getVersion())))
+
+/** Le fichier telecharge, verifie, pret a etre lance. `null` tant qu'il n'y en a pas. */
+let installeurPret = null
+
+ipcMain.handle(
+  'maj:telecharger',
+  repondre(async () => {
+    const r = await maj.verifierLanceur(app.getVersion())
+    if (r.aJour !== false) {
+      throw Object.assign(new Error('rien \u00e0 installer'), { cle: 'err.majRien' })
+    }
+    const t = await maj.telechargerLanceur(r, (fait, total) => {
+      annoncer('maj:avancement', {
+        fait,
+        total,
+        pourcent: total ? Math.round((fait / total) * 100) : 0,
+      })
+    })
+    installeurPret = t.chemin
+    return { ...t, version: r.versionDistante }
+  }),
+)
+
+/**
+ * Lance l'installeur et ferme le lanceur.
+ *
+ * ⚠️ ON NE FERME PAS SANS QUE LE JOUEUR L'AIT DEMANDE. L'installeur remplace
+ *    les fichiers de l'application : il ne peut pas travailler pendant qu'elle
+ *    tourne. Fermer tout seul pendant une partie serait exactement le genre de
+ *    chose qu'on reproche aux autres lanceurs -- d'ou le bouton, et d'ou le
+ *    refus quand un serveur heberge ici tourne encore.
+ */
+ipcMain.handle(
+  'maj:installer',
+  repondre(async () => {
+    if (!installeurPret || !fs.existsSync(installeurPret)) {
+      throw Object.assign(new Error('rien de pr\u00eat'), { cle: 'err.majPasPret' })
+    }
+    if (heberger.actif()) {
+      throw Object.assign(new Error('un serveur tourne'), { cle: 'err.majServeurEnMarche' })
+    }
+    const enfant = spawn(installeurPret, [], { detached: true, stdio: 'ignore' })
+    enfant.unref()
+    setTimeout(() => app.quit(), 500)
+    return { lance: true }
+  }),
+)
 
 /*
   Le jeu a-t-il change sous nos pieds ?

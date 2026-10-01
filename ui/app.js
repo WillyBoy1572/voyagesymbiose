@@ -208,6 +208,12 @@ function ligneServeur(s) {
   if (s.motDePasse) marques.push(T('serv.protege'))
   if (s.public) marques.push(T('serv.public'))
   if (s.pays) marques.push(s.pays)
+  /*
+    ⚠️ C'EST LA LATENCE DU JEU, MESUREE EN UDP SUR SON PORT. Pas celle de la
+       page qui a servi à bâtir la liste : le jeu ne passe pas par là. Et quand
+       la sonde n'a rien reçu, on n'affiche RIEN plutôt qu'un zéro rassurant.
+  */
+  if (Number.isFinite(s.ping)) marques.push(T('serv.ping', { ms: s.ping }))
 
   detail.textContent = s.enLigne
     ? `${s.hote}:${s.port} · ${s.joueurs}/${s.maxJoueurs} ${T('serv.joueurs')} · v${s.version}${
@@ -1291,21 +1297,49 @@ async function verifierMisesAJour(silencieux) {
   if (r.aJour === null) {
     $('maj-lanceur').textContent = T('maj.echec', { raison: r.raison ?? '?' })
     $('btn-maj-telecharger').hidden = true
+    $('btn-maj-installer').hidden = true
     return
   }
 
   if (r.aJour) {
     $('maj-lanceur').textContent = T('maj.aJour', { v: r.versionLocale })
     $('btn-maj-telecharger').hidden = true
+    $('btn-maj-installer').hidden = true
     return
   }
 
   $('maj-lanceur').textContent = T('maj.disponible', { v: r.versionLocale, nouvelle: r.versionDistante })
   $('btn-maj-telecharger').hidden = false
+  $('btn-maj-installer').hidden = false
   if (!silencieux) dire(T('maj.disponible', { v: r.versionLocale, nouvelle: r.versionDistante }), 'info')
 }
 
 $('btn-maj-verifier').addEventListener('click', () => verifierMisesAJour(false))
+
+window.voyage.surAvancementMaj((c) => {
+  $('maj-lanceur').textContent = T('maj.enCours', { pourcent: c.pourcent })
+})
+
+$('btn-maj-installer').addEventListener('click', async () => {
+  const bouton = $('btn-maj-installer')
+  bouton.disabled = true
+  const t = deballer(await window.voyage.telechargerMaj())
+  if (!t) {
+    bouton.disabled = false
+    return
+  }
+  dire(T('maj.verifiee', { v: t.version }), 'bon')
+  /*
+    ⚠️ ON PREVIENT AVANT DE FERMER. L'installeur ne peut pas remplacer les
+       fichiers du lanceur pendant qu'il tourne : il va donc se fermer. Le dire
+       une seconde avant vaut mieux qu'une fenetre qui disparait.
+  */
+  dire(T('maj.fermeture'), 'info')
+  setTimeout(async () => {
+    const r = deballer(await window.voyage.installerMaj())
+    if (!r) bouton.disabled = false
+  }, 1200)
+})
 
 $('btn-maj-telecharger').addEventListener('click', () => {
   window.open('https://caretakermp.symbioseheritage.ca/#telecharger', '_blank')

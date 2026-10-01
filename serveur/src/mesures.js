@@ -178,4 +178,4 @@ class Mesures {
   }
 }
 
-module.exports = { Mesures, ECHANTILLONS, FENETRE_MS }
+module.exports = { Mesures, FENETRE_MS }

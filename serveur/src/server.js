@@ -93,15 +93,36 @@ function envoyerBrut(objet, port, adresse) {
 const rendezvous = new RendezVous(config, envoyerBrut, dire)
 const percage = new Percage(config, envoyerBrut, dire)
 
+/**
+ * Envoie un paquet deja encode.
+ *
+ * ⚠️ C'EST LE SEUL ENDROIT QUI SAIT QUE LE RELAIS EXISTE. Tout le reste du
+ *    serveur envoie a une adresse et un port ; si cette adresse est celle du
+ *    relais, le paquet part dans une enveloppe vers le rendez-vous au lieu
+ *    d'aller directement au joueur. Rien d'autre ne change -- et il ne faut pas
+ *    qu'autre chose le sache, sinon il y aurait deux facons d'envoyer et une
+ *    des deux oublierait le relais.
+ */
+function envoyerPaquet(tampon, port, adresse) {
+  if (adresse === ADRESSE_RELAIS) {
+    const rdv = percage.cible
+    if (!rdv) return
+    const enveloppe = encoder({ t: 'rdv-pont', s: port, d: tampon.toString('base64') })
+    socket.send(enveloppe, rdv.port, rdv.adresse, (e) => {
+      if (e) journal.avis(`relais ${port} — ${e.message}`)
+    })
+    return
+  }
+  socket.send(tampon, port, adresse, (e) => {
+    // Un envoi rate vers un client parti n'est pas une erreur du serveur.
+    if (e) journal.avis(`envoi vers ${adresse}:${port} — ${e.message}`)
+  })
+}
+
 const session = new Session(
   config,
   monde,
-  (tampon, port, adresse) => {
-    socket.send(tampon, port, adresse, (e) => {
-      // Un envoi rate vers un client parti n'est pas une erreur du serveur.
-      if (e) journal.avis(`envoi vers ${adresse}:${port} — ${e.message}`)
-    })
-  },
+  envoyerPaquet,
   {
     entites,
     identites,
@@ -190,6 +211,17 @@ socket.on('message', (tampon, info) => {
 
      Le plafond est par adresse et large : un joueur honnete envoie UN bonjour.
 */
+/**
+ * L'adresse d'un joueur qui passe par le relais.
+ *
+ * ⚠️ ON LUI DONNE UNE ADRESSE ET UN PORT COMME A TOUT LE MONDE. Le port est
+ *    l'identifiant de session du relais : le couple est unique et stable, donc
+ *    les jetons lies a l'adresse, les sessions, les expulsions et le reste du
+ *    serveur continuent de marcher sans rien savoir du relais. Un seul endroit
+ *    emballe, un seul deballe.
+ */
+const ADRESSE_RELAIS = '@relais'
+
 const PAQUETS_LIBRES_PAR_SECONDE = 10
 const compteursLibres = new Map()
 
@@ -215,8 +247,16 @@ function traiter(tampon, adresse, port) {
   if (!brut) return mesures.refuse()
 
   const sansJeton =
-    (typeof brut.t === 'string' && brut.t.startsWith('rdv-')) || brut.t === 'bonjour'
-  if (sansJeton && tropDeLibres(adresse)) return mesures.refuse()
+    (typeof brut.t === 'string' && brut.t.startsWith('rdv-')) ||
+    brut.t === 'bonjour' ||
+    brut.t === 'sonde'
+  /*
+    ⚠️ LES JOUEURS RELAYES PARTAGENT UNE ADRESSE. Les compter ensemble ferait
+       du plafond une punition collective : le deuxieme arrive mangerait le
+       budget du premier. On compte par session de relais.
+  */
+  const cleLimite = adresse === ADRESSE_RELAIS ? `${ADRESSE_RELAIS}:${port}` : adresse
+  if (sansJeton && tropDeLibres(cleLimite)) return mesures.refuse()
 
   /*
     ⚠️ LES MESSAGES DE RENDEZ-VOUS PASSENT AVANT LA SESSION, PAR DEFINITION. Ils
@@ -230,12 +270,59 @@ function traiter(tampon, adresse, port) {
           elle-meme annoncee ici -- mais ce n'est pas zero, et le plafond
           par source ci-dessous est ce qui le borne.
   */
+  /*
+    ⚠️ UNE ENVELOPPE DE RELAIS SE DEBALLE UNE FOIS, ET PAS DEUX. Sans ce garde,
+       une enveloppe qui en contient une autre nous ferait tourner en rond --
+       et le `s` de la seconde pourrait viser un autre joueur que la premiere.
+  */
+  /*
+    ⚠️ LA CONDITION PORTE SUR L'EXPEDITEUR, PAS SUR LE TYPE. Un serveur peut
+       etre les DEUX : il tient un point de rendez-vous pour les autres ET il
+       passe lui-meme par un relais. Intercepter tout `rdv-pont` ici empechait
+       le point de rendez-vous de faire suivre les enveloppes des autres -- le
+       relais s'ouvrait et aucun octet ne traversait.
+  */
+  if (brut.t === 'rdv-pont' && adresse !== ADRESSE_RELAIS && percage.estLeRendezVous(adresse, port)) {
+    if (!Number.isInteger(brut.s) || typeof brut.d !== 'string') return mesures.refuse()
+    let dedans
+    try {
+      dedans = decoder(Buffer.from(brut.d, 'base64'))
+    } catch {
+      return mesures.refuse()
+    }
+    if (!dedans || dedans.t === 'rdv-pont') return mesures.refuse()
+    return traiterMessage(dedans, ADRESSE_RELAIS, brut.s)
+  }
+
+  /*
+    ⚠️ UNE SONDE DIT LA LATENCE REELLE, PAS CELLE D'UNE PAGE WEB. La liste des
+       serveurs se construit sur des appels HTTP ; or le jeu passe en UDP, sur
+       un autre port, souvent par un autre chemin. Un serveur qui repond vite en
+       TCP peut tres bien etre injouable.
+
+    ⚠️ ELLE NE DIT RIEN D'AUTRE, ET RENVOIE EXACTEMENT CE QU'ELLE A RECU. Pas de
+       nom, pas de nombre de joueurs, pas d'etat : une reponse plus grosse que
+       la demande ferait de chaque serveur un amplificateur pour qui veut
+       inonder quelqu'un en usurpant son adresse. Ici, un paquet pour un paquet,
+       et le plafond par adresse ci-dessus borne le reste.
+  */
+  if (brut.t === 'sonde') {
+    const ts = Number.isFinite(brut.ts) ? brut.ts : 0
+    envoyerPaquet(encoder({ t: 'sonde', ts }), port, adresse)
+    return
+  }
+
   if (typeof brut.t === 'string' && brut.t.startsWith('rdv-')) {
     if (percage.traiter(brut, adresse, port)) return
     if (rendezvous.traiter(brut, adresse, port)) return
     return mesures.refuse()
   }
 
+  return traiterMessage(brut, adresse, port)
+}
+
+/** Le meme traitement, qu'on arrive en direct ou dans une enveloppe de relais. */
+function traiterMessage(brut, adresse, port) {
   const message = valider(brut)
   if (!message) return mesures.refuse()
 

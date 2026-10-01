@@ -656,4 +656,4 @@ class Session {
   }
 }
 
-module.exports = { Session, Joueur, PAQUETS_PAR_SECONDE, REPRISE_MS, DETAIL_JUSQUA }
+module.exports = { Session, Joueur, PAQUETS_PAR_SECONDE }

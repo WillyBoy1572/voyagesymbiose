@@ -182,4 +182,4 @@ class Permissions {
   }
 }
 
-module.exports = { Permissions, ROLES, DROITS, RANG }
+module.exports = { Permissions, ROLES, DROITS }

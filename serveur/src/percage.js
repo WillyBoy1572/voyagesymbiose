@@ -76,6 +76,9 @@ class Percage {
 
     /** Pourquoi le rendez-vous refuse, s'il refuse. `null` tant qu'il accepte. */
     this.refus = null
+
+    /** Les sessions relayees dont on a entendu parler, pour ne le dire qu'une fois. */
+    this.relais = new Set()
   }
 
   #lireCible(brut) {
@@ -111,6 +114,18 @@ class Percage {
   arreter() {
     if (this.minuterie) clearInterval(this.minuterie)
     this.minuterie = null
+  }
+
+  /**
+   * Ce paquet vient-il de NOTRE point de rendez-vous ?
+   *
+   * ⚠️ LE SERVEUR OUVRE SA PORTE AUX ENVELOPPES `rdv-pont` : il faut qu'il
+   *    sache d'ou elles ont le droit de venir. Sans ce test, n'importe qui
+   *    pourrait injecter des messages de jeu en se faisant passer pour un
+   *    joueur relaye.
+   */
+  estLeRendezVous(adresse, port) {
+    return Boolean(this.cible) && adresse === this.cible.adresse && port === this.cible.port
   }
 
   /** Un battement : on se rappelle au rendez-vous, et le trou reste ouvert. */
@@ -199,6 +214,26 @@ class Percage {
         return true
       }
 
+      case 'rdv-relais-pret': {
+        if (!duRendezVous) return true
+        this.derniereReponse = Date.now()
+        /*
+          ⚠️ IL N'Y A RIEN A RETENIR ICI. Le rendez-vous connait les deux bouts ;
+             le serveur, lui, apprend le joueur relaye au premier `rdv-pont` qui
+             arrive, par l'identifiant qu'il porte. Moins d'etat, moins de
+             desynchronisation. On le dit quand meme : un relais change la
+             latence, et l'hote doit pouvoir le savoir.
+        */
+        if (Number.isInteger(message.s) && !this.relais.has(message.s)) {
+          this.relais.add(message.s)
+          this.journal(
+            `per\u00e7age impossible pour un joueur : il passe par le relais du rendez-vous ` +
+              `(session ${message.s}). Sa latence sera plus haute.`,
+          )
+        }
+        return true
+      }
+
       case 'rdv-salut':
         /*
           Un client qui perce vers nous. Il n'y a rien a faire : le simple fait
@@ -245,6 +280,7 @@ class Percage {
       vu: this.vu,
       symetrique: this.symetrique,
       refus: this.refus,
+      relais: this.relais.size,
       refusExplique: this.refus ? (EXPLICATIONS[this.refus] ?? this.refus) : null,
       annonces: this.annonces,
       perces: this.perces,

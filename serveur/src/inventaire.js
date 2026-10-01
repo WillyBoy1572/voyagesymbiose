@@ -277,4 +277,4 @@ class Inventaires {
   }
 }
 
-module.exports = { Inventaires, nomObjet, quantite, ESPECES_MAX, PAR_ESPECE_MAX }
+module.exports = { Inventaires, nomObjet, quantite }

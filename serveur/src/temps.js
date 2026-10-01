@@ -138,4 +138,4 @@ class Temps {
   }
 }
 
-module.exports = { Temps, METEOS, SUITES }
+module.exports = { Temps }

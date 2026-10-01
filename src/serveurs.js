@@ -1,5 +1,6 @@
 'use strict'
 
+const dgram = require('node:dgram')
 const fs = require('node:fs')
 const path = require('node:path')
 const os = require('node:os')
@@ -72,6 +73,86 @@ function retirer(hote, port) {
   return liste
 }
 
+/** Combien de coups de sonde. Trois : un seul se perd, dix font du bruit. */
+const COUPS_DE_SONDE = 3
+
+/**
+ * La latence REELLE vers le port du jeu, en UDP.
+ *
+ * ⚠️ LA LISTE SE CONSTRUIT SUR DES APPELS HTTP, ET CE N'EST PAS LA MEME CHOSE.
+ *    Le jeu passe en UDP, sur un autre port, souvent par un autre chemin : un
+ *    serveur qui repond vite a `/info` peut etre injouable. Le joueur doit voir
+ *    la latence de ce qu'il va vraiment utiliser.
+ *
+ * ⚠️ ON GARDE LE MEILLEUR DES TROIS, PAS LA MOYENNE. Un paquet retarde par un
+ *    pic ne dit rien de la ligne ; le plus rapide dit ce qu'elle peut faire.
+ *
+ * ⚠️ `null` VEUT DIRE « ON NE SAIT PAS », JAMAIS ZÉRO. Un serveur qui ne
+ *    repond pas a la sonde n'a pas 0 ms de latence.
+ */
+function sonder(hote, port, delaiMs = 1500) {
+  return new Promise((resolve) => {
+    let prise
+    try {
+      prise = dgram.createSocket('udp4')
+    } catch {
+      resolve(null)
+      return
+    }
+
+    const departs = new Map()
+    let meilleur = null
+    let fini = false
+
+    const minuteries = []
+    const terminer = () => {
+      if (fini) return
+      fini = true
+      for (const m of minuteries) clearTimeout(m)
+      try {
+        prise.close()
+      } catch {
+        /* deja fermee */
+      }
+      resolve(meilleur)
+    }
+
+    prise.on('error', terminer)
+    prise.on('message', (brut) => {
+      try {
+        const m = JSON.parse(brut.toString('utf8'))
+        if (m.t !== 'sonde' || !departs.has(m.ts)) return
+        const aller = Date.now() - departs.get(m.ts)
+        if (meilleur === null || aller < meilleur) meilleur = aller
+        if (departs.size >= COUPS_DE_SONDE && meilleur !== null) terminer()
+      } catch {
+        /* illisible */
+      }
+    })
+
+    /*
+      ⚠️ PAS DE `unref` ICI. Avec lui, rien ne retient la boucle d'evenements : le
+         processus se termine avant que la sonde ait recu quoi que ce soit. Dans
+         Electron la boucle tourne toujours et le defaut ne se voyait pas -- il
+         se voyait en revanche tout de suite dans un banc d'essai, ce qui est
+         exactement la raison d'en avoir un. Les minuteries sont annulees a la
+         fin, donc elles ne retiennent rien plus longtemps que la sonde.
+    */
+    for (let i = 0; i < COUPS_DE_SONDE; i++) {
+      minuteries.push(
+        setTimeout(() => {
+          if (fini) return
+          const ts = Date.now() * 10 + i
+          departs.set(ts, Date.now())
+          prise.send(Buffer.from(JSON.stringify({ t: 'sonde', ts })), port, hote, () => {})
+        }, i * 120),
+      )
+    }
+
+    minuteries.push(setTimeout(terminer, delaiMs))
+  })
+}
+
 /**
  * Interroge un serveur.
  *
@@ -85,16 +166,22 @@ async function interroger(serveur) {
   for (const portInfo of [serveur.port + 1, serveur.port]) {
     try {
       const r = await fetch(`http://${serveur.hote}:${portInfo}/info`, {
-      // Un serveur listé ne redirige pas : s'il le fait, ce n'en est pas un.
-      redirect: 'error',
+        // Un serveur listé ne redirige pas : s'il le fait, ce n'en est pas un.
+        redirect: 'error',
         signal: AbortSignal.timeout(2500),
       })
       if (!r.ok) continue
       const info = await r.json()
       if (!info || typeof info.nom !== 'string') continue
+      /*
+        ⚠️ ON SONDE LE PORT DU JEU, PAS CELUI QUI VIENT DE REPONDRE. C'est le
+           premier qui comptera quand le joueur sera en partie.
+      */
+      const ping = await sonder(serveur.hote, serveur.port)
       return {
         ...base,
         enLigne: true,
+        ping,
         portInfo,
         nom: info.nom,
         joueurs: info.joueurs ?? 0,
@@ -162,4 +249,5 @@ async function rafraichir() {
   return Promise.all(aInterroger.map(interroger))
 }
 
-module.exports = { lire, ajouter, retirer, rafraichir, interroger, analyser, annuaire, FICHIER, ANNUAIRE }
+module.exports = {
+  sonder, lire, ajouter, retirer, rafraichir, interroger, analyser, annuaire, FICHIER, ANNUAIRE }

@@ -315,13 +315,33 @@ async function installer({ hote, port, motDePasse, dossier }) {
   const cible = vue.dossier || dossierSauvegardes(dossier)
   if (!cible) throw new Error('dossier de sauvegardes introuvable')
 
+  /*
+    ⚠️ ON REGARDE DANS L'ARCHIVE AVANT DE L'OUVRIR. `contenu()` lit la table
+       sans rien extraire ; `decompresser()` ecrit sur le disque. L'ordre
+       inverse laissait `Expand-Archive` poser les fichiers d'abord et on ne
+       triait qu'ensuite -- la copie vers le dossier du jeu etait bien gardee,
+       mais ce qui avait deja ete ecrit ailleurs l'etait deja.
+
+    ⚠️ ET ON REFUSE L'ARCHIVE ENTIERE, PAS SEULEMENT L'ENTREE FAUTIVE. Une
+       archive qui contient un chemin pareil n'est pas une sauvegarde avec un
+       defaut : c'est quelque chose d'autre. L'ouvrir a moitie serait pire que
+       de la refuser.
+  */
+  const entrees = await contenu(vue.archive)
+  const douteuses = entrees.filter((e) => !nomAcceptable(e.nom))
+  if (douteuses.length) {
+    throw Object.assign(
+      new Error(`archive refusée : ${douteuses.length} entrée(s) illégitime(s)`),
+      { cle: 'err.archiveDouteuse', valeurs: { nom: douteuses[0].nom.slice(0, 60) } },
+    )
+  }
+
   const copie = await mettreDeCote(dossier)
 
   const ouvert = await decompresser(vue.archive, path.join(dossierTravail(), 'ouvert'))
 
   let poses = 0
-  for (const entree of await contenu(vue.archive)) {
-    if (!nomAcceptable(entree.nom)) continue
+  for (const entree of entrees) {
     const nom = path.basename(entree.nom)
     const source = path.join(ouvert, entree.nom.replace(/\//g, path.sep))
 
@@ -379,6 +399,20 @@ async function restaurer(chemin, dossier) {
 
   // On met de cote l'etat actuel avant de le remplacer, lui aussi.
   const avant = await mettreDeCote(dossier)
+
+  /*
+    ⚠️ MEME ORDRE ICI : on regarde, puis on ouvre. C'est une copie qu'on a faite
+       nous-memes, donc le risque est faible -- mais « faible » n'est pas une
+       raison d'ecrire le controle a l'envers dans un endroit et pas l'autre.
+  */
+  const dedans = await contenu(chemin)
+  const sales = dedans.filter((e) => !nomAcceptable(e.nom))
+  if (sales.length) {
+    throw Object.assign(new Error('archive refusée'), {
+      cle: 'err.archiveDouteuse',
+      valeurs: { nom: sales[0].nom.slice(0, 60) },
+    })
+  }
 
   const ouvert = await decompresser(chemin, path.join(dossierTravail(), 'restauration'))
   let poses = 0

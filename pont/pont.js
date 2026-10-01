@@ -71,6 +71,7 @@ if (billet && rendezVousAdresse) {
 }
 let hoteTrouve = !billet
 let tentativesRdv = 0
+let tentativesDirect = 0
 const nomJoueur = argument('nom', os.userInfo().username || 'Joueur').slice(0, 24)
 const motDePasse = argument('motdepasse', '')
 
@@ -148,6 +149,8 @@ const MOTS = {
     rdvTrouve: (q) => `hôte trouvé : ${q} — on perce le chemin`,
     rdvRefus: (r) => `le point de rendez-vous refuse : ${r}`,
     rdvAbandon: () => 'l’hôte ne répond pas. Son billet a peut-être expiré, ou sa box ne laisse pas percer.',
+    relaisDemande: () => 'le perçage direct ne répond pas. On demande un détour par le point de rendez-vous…',
+    relaisPret: () => 'détour ouvert. Ça marchera, mais la latence sera plus haute qu’en direct.',
     rdvSansAdresse: () => 'un billet a été donné, mais aucun point de rendez-vous : impossible de chercher l’hôte.',
     qualite: (r, g, p) => `lien : ${r} ms, gigue ${g} ms, perte ${p} %`,
   },
@@ -171,6 +174,8 @@ const MOTS = {
     rdvTrouve: (q) => `host found: ${q} — punching through`,
     rdvRefus: (r) => `the rendezvous refused: ${r}`,
     rdvAbandon: () => 'the host is not answering. Their ticket may have expired, or their router will not let us through.',
+    relaisDemande: () => 'direct hole punching is not answering. Asking for a detour through the rendezvous…',
+    relaisPret: () => 'detour open. It will work, but latency will be higher than direct.',
     rdvSansAdresse: () => 'a ticket was given but no rendezvous: cannot look for the host.',
     qualite: (r, g, p) => `link: ${r} ms, jitter ${g} ms, loss ${p} %`,
   },
@@ -194,6 +199,8 @@ const MOTS = {
     rdvTrouve: (q) => `anfitrión encontrado: ${q} — abriendo el camino`,
     rdvRefus: (r) => `el punto de encuentro rechaza: ${r}`,
     rdvAbandon: () => 'el anfitrión no responde. Su billete puede haber caducado, o su router no deja pasar.',
+    relaisDemande: () => 'la perforación directa no responde. Pedimos un desvío por el punto de encuentro…',
+    relaisPret: () => 'desvío abierto. Funcionará, pero la latencia será más alta que en directo.',
     rdvSansAdresse: () => 'se dio un billete pero ningún punto de encuentro: no se puede buscar al anfitrión.',
     qualite: (r, g, p) => `enlace: ${r} ms, fluctuación ${g} ms, pérdida ${p} %`,
   },
@@ -402,9 +409,45 @@ let rendezVous = null
 let derniereReponse = 0
 let derniereQualite = null
 
+/**
+ * L'identifiant de session du relais, quand on y est passe. `null` en direct.
+ *
+ * ⚠️ LE RELAIS EST UN DERNIER RECOURS, PAS UN DEFAUT. Il ajoute un detour a
+ *    chaque paquet et coute la bande passante de celui qui le tient. On ne le
+ *    demande qu'apres avoir essaye le direct et constate que rien ne revient.
+ */
+let relais = null
+let relaisDemande = 0
+
 function envoyer(objet) {
   const corps = jeton && !objet.jeton ? { ...objet, jeton } : objet
-  socket.send(Buffer.from(JSON.stringify(corps)), port, hote, () => {})
+  const tampon = Buffer.from(JSON.stringify(corps))
+
+  /*
+    ⚠️ UN SEUL ENDROIT EMBALLE. Le reste du pont continue d'appeler `envoyer`
+       sans savoir si on passe en direct ou par le detour -- sinon il faudrait y
+       penser a chaque nouvel appel, et on l'oublierait une fois.
+  */
+  if (relais !== null && rdv) {
+    const enveloppe = JSON.stringify({ t: 'rdv-pont', s: relais, d: tampon.toString('base64') })
+    socket.send(Buffer.from(enveloppe), rdv.port, rdv.adresse, () => {})
+    return
+  }
+  socket.send(tampon, port, hote, () => {})
+}
+
+/** Demande le detour. Sans effet si on l'a deja. */
+function demanderLeRelais() {
+  if (relais !== null || !rdv || !billet) return
+  if (Date.now() - relaisDemande < 2000) return
+  relaisDemande = Date.now()
+  log(M('relaisDemande'))
+  socket.send(
+    Buffer.from(JSON.stringify({ t: 'rdv-relais', billet })),
+    rdv.port,
+    rdv.adresse,
+    () => {},
+  )
 }
 
 /** Une cle de transaction, pour qu'un renvoi ne fasse pas le travail deux fois. */
@@ -419,6 +462,22 @@ socket.on('message', (tampon) => {
   } catch {
     return
   }
+
+  /*
+    ⚠️ UNE ENVELOPPE SE DEBALLE UNE FOIS. On remplace le message par son
+       contenu et on continue comme si de rien n'etait : tout le reste du pont
+       ignore que le relais existe.
+  */
+  if (m && m.t === 'rdv-pont') {
+    if (relais === null || m.s !== relais || typeof m.d !== 'string') return
+    try {
+      m = JSON.parse(Buffer.from(m.d, 'base64').toString('utf8'))
+    } catch {
+      return
+    }
+    if (!m || m.t === 'rdv-pont') return
+  }
+
   derniereReponse = Date.now()
 
   switch (m.t) {
@@ -453,6 +512,21 @@ socket.on('message', (tampon) => {
     case 'rdv-salut':
       // L'hote a perce vers nous : le chemin est ouvert, il n'y a rien a faire.
       break
+
+    case 'rdv-relais-pret': {
+      if (!Number.isInteger(m.s)) break
+      if (relais === m.s) break
+      relais = m.s
+      log(M('relaisPret'))
+      /*
+        ⚠️ ON REDIT BONJOUR, PAR LE NOUVEAU CHEMIN. Le serveur n'a jamais recu
+           le premier : pour lui, ce joueur arrive maintenant, et depuis une
+           autre adresse que celle qu'il aurait vue en direct.
+      */
+      jeton = null
+      seConnecter()
+      break
+    }
 
     case 'reseau':
       /*
@@ -692,6 +766,17 @@ setInterval(() => {
       () => {},
     )
     return
+  }
+
+  /*
+    ⚠️ L'HOTE EST TROUVE, ON A TAPE, ET RIEN NE REVIENT : c'est la signature
+       d'un NAT symetrique, des deux cotes ou d'un seul. L'adresse apprise au
+       rendez-vous ne vaut rien, et retaper mille fois n'y changera rien. On
+       demande le detour -- une fois, pas a chaque seconde.
+  */
+  if (!jeton && billet && relais === null && hoteTrouve) {
+    tentativesDirect++
+    if (tentativesDirect >= 4) demanderLeRelais()
   }
 
   if (!jeton) return seConnecter()
