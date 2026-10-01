@@ -57,6 +57,13 @@ for (const f of [
        production.
   */
   'src/identite.js',
+  /*
+    ⚠️ SANS `heberger.js`, LE BOUTON « HÉBERGER » NE FAIT RIEN. Et sans le
+       dossier `serveur/`, il n'a rien à démarrer : ce sont les deux moitiés de
+       la même fonctionnalité, et un fichier oublié dans le paquet est
+       exactement le genre de panne qu'on ne voit qu'en production.
+  */
+  'src/heberger.js',
 ]) {
   ok(dedans(path.basename(f)), `${f} est dans le paquet`)
 }
@@ -81,6 +88,41 @@ for (const mod of ['VoyageLien', 'VoyageSonde']) {
   ok(
     fs.existsSync(path.join(horsAsar, 'mods', mod, 'Scripts', 'main.lua')),
     `le mod ${mod} est hors de l’asar`,
+  )
+}
+
+/*
+  Le serveur embarque : c'est lui qui permet d'heberger depuis chez soi.
+
+  ⚠️ IL DOIT SORTIR DE L'ARCHIVE. Un fichier reste dans l'asar ne peut pas etre
+     lance comme programme : le bouton « Heberger » echouerait au demarrage,
+     avec une erreur que personne ne saurait lire.
+
+  ⚠️ ET SA VERSION DOIT ETRE CELLE DU LANCEUR. Un serveur embarque d'une autre
+     version, c'est un protocole qui diverge sans que rien ne le dise.
+*/
+ok(
+  fs.existsSync(path.join(horsAsar, 'serveur', 'src', 'server.js')),
+  'le serveur embarque est hors de l’asar',
+)
+try {
+  const paquetServeur = JSON.parse(
+    fs.readFileSync(path.join(horsAsar, 'serveur', 'package.json'), 'utf8'),
+  )
+  const paquetLanceur = JSON.parse(fs.readFileSync(path.join(RACINE, 'package.json'), 'utf8'))
+  ok(
+    paquetServeur.version === paquetLanceur.version,
+    'et il porte la meme version que le lanceur',
+    `${paquetServeur.version} vs ${paquetLanceur.version}`,
+  )
+} catch (e) {
+  ok(false, 'et il porte la meme version que le lanceur', e.message)
+}
+
+for (const f of ['config.js', 'protocole.js', 'session.js', 'annuaire.js', 'pnj.js']) {
+  ok(
+    fs.existsSync(path.join(horsAsar, 'serveur', 'src', f)),
+    `serveur/src/${f} est livre`,
   )
 }
 

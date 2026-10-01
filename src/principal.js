@@ -10,6 +10,7 @@ const lien = require('./lien')
 const ue4ss = require('./ue4ss')
 const sauvegardes = require('./sauvegardes')
 const identite = require('./identite')
+const heberger = require('./heberger')
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -60,6 +61,15 @@ function creerFenetre() {
   lien.surLigne((ligne) => {
     if (fenetre && !fenetre.isDestroyed()) fenetre.webContents.send('lien:ligne', ligne)
   })
+
+  /*
+    ⚠️ LA CONSOLE DU SERVEUR HEBERGE REMONTE EN DIRECT, comme celle du pont.
+       Sans elle, « mon serveur ne demarre pas » n'aurait aucune explication :
+       le serveur dit pourtant precisement ce qui lui manque.
+  */
+  heberger.surLigne((ligne) => {
+    if (fenetre && !fenetre.isDestroyed()) fenetre.webContents.send('heberger:ligne', ligne)
+  })
   fenetre.once('ready-to-show', () => fenetre.show())
 
   // Un lien externe s'ouvre dans le navigateur, jamais dans le lanceur.
@@ -79,6 +89,7 @@ app.whenReady().then(() => {
     dossier: app.getPath('userData'),
     reprisesConnues: lireReglages().reprises,
   })
+  heberger.poserContexte({ dossier: app.getPath('userData') })
 
   /*
     ⚠️ LE JETON DE REPRISE S'ECRIT SUR DISQUE, PARCE QUE LE VRAI CAS D'USAGE
@@ -157,7 +168,11 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => app.quit())
 
 // On ne laisse jamais un pont tourner apres la fermeture du lanceur.
-app.on('before-quit', () => lien.nettoyer())
+app.on('before-quit', () => {
+  lien.nettoyer()
+  // Un serveur laisse derriere nous continuerait d'occuper le port, en silence.
+  heberger.nettoyer()
+})
 
 // ── Passerelle ──────────────────────────────────────────────────────────────
 
@@ -546,7 +561,14 @@ ipcMain.handle(
   repondre(async (_e, hote, port, motDePasse) => {
     const reglages = lireReglages()
     const nom = (reglages.nomJoueur || '').trim() || 'Joueur'
-    return lien.demarrer({ hote, port, nom, motDePasse, langue: reglages.langue || 'fr' })
+    return lien.demarrer({
+      hote,
+      port,
+      nom,
+      motDePasse,
+      langue: reglages.langue || 'fr',
+      creatures: reglages.creatures || 'miroir',
+    })
   }),
 )
 ipcMain.handle('lien:deconnecter', repondre(async () => lien.arreter()))
@@ -579,6 +601,99 @@ ipcMain.handle(
       throw Object.assign(new Error('Pas encore de rapport.'), { cle: 'err.pasDeRapport' })
     }
     return { chemin, contenu: fs.readFileSync(chemin, 'utf8').slice(0, 20000) }
+  }),
+)
+
+// ── Hebergement maison ──────────────────────────────────────────────────────
+
+/*
+  ⚠️ C'EST LA SEULE FACON D'HEBERGER AVEC SA PROPRE PARTIE. Sur un serveur loue,
+     publier un monde demande le mot de passe de publication, que seul celui qui
+     tient l'hebergement possede. Ici le lanceur ecrit l'archive directement dans
+     le dossier du serveur, avant qu'il demarre.
+*/
+/*
+  Le mode des creatures, garde d'une fois sur l'autre.
+
+  ⚠️ C'EST UN REGLAGE DE CLIENT, PAS DE SERVEUR. Il ne part pas sur le reseau :
+     il decide seulement de ce que CE joueur voit.
+*/
+ipcMain.handle(
+  'reglages:creatures',
+  repondre(async (_e, mode) => {
+    const propre = ['miroir', 'annonce', 'rien'].includes(mode) ? mode : 'miroir'
+    const r = lireReglages()
+    r.creatures = propre
+    ecrireReglages(r)
+    return { creatures: propre }
+  }),
+)
+
+ipcMain.handle('heberger:etat', repondre(async () => heberger.etat()))
+
+ipcMain.handle(
+  'heberger:demarrer',
+  repondre(async (_e, reglages) => {
+    const r = lireReglages()
+    const moi = identite.publique(app.getPath('userData'))
+
+    const etat = await heberger.demarrer({
+      ...reglages,
+      pseudo: (r.nomJoueur || '').trim() || 'hôte',
+      dossierSauvegardes: r.dossierSauvegardes,
+      empreinte: moi ? moi.empreinte : null,
+    })
+
+    // On garde les reglages d'hebergement d'une fois sur l'autre.
+    r.hebergement = {
+      nom: etat.reglages?.nom,
+      port: etat.reglages?.port,
+      maxJoueurs: etat.reglages?.maxJoueurs,
+      public: etat.reglages?.public,
+      motDePasse: reglages.motDePasse || '',
+      partagerLaPartie: reglages.partagerLaPartie !== false,
+      cycleMinutes: reglages.cycleMinutes || 0,
+    }
+    ecrireReglages(r)
+    return etat
+  }),
+)
+
+ipcMain.handle('heberger:arreter', repondre(async () => heberger.arreter()))
+
+ipcMain.handle('heberger:commande', repondre(async (_e, texte) => ({ ok: heberger.commande(texte) })))
+
+/*
+  Qui est sur MON serveur, avec de quoi agir.
+
+  ⚠️ CETTE ROUTE DONNE LES ADRESSES, ET ELLE EST RESERVEE A SON PROPRIETAIRE.
+     Elle n'est interrogeable que sur 127.0.0.1, avec une cle que seul ce
+     lanceur connait. L'hote en a besoin pour bannir ; personne d'autre.
+*/
+ipcMain.handle(
+  'heberger:joueurs',
+  repondre(async () => {
+    const a = heberger.adresseAdmin()
+    if (!a) return { joueurs: [], annuaire: null }
+    try {
+      const [joueurs, etat] = await Promise.all([
+        fetch(`${a.base}/admin/joueurs`, {
+          headers: { 'X-Admin-Cle': a.cle },
+          signal: AbortSignal.timeout(2500),
+        }).then((r) => (r.ok ? r.json() : null)),
+        fetch(`${a.base}/admin/etat`, {
+          headers: { 'X-Admin-Cle': a.cle },
+          signal: AbortSignal.timeout(2500),
+        }).then((r) => (r.ok ? r.json() : null)),
+      ])
+      return {
+        joueurs: joueurs?.joueurs ?? [],
+        annuaire: etat?.annuaire ?? null,
+        mesures: etat?.mesures ?? null,
+      }
+    } catch {
+      return { joueurs: [], annuaire: null }
+    }
   }),
 )
 

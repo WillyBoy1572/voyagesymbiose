@@ -50,8 +50,26 @@ local RETARD_RENDU_MS = 150
 --- Au-dela, on cesse d'extrapoler : mieux vaut s'arreter que partir au loin.
 local EXTRAPOLATION_MAX_MS = 500
 
---- Toutes les combien de secondes l'hote envoie son recensement de creatures.
-local RECENSEMENT_S = 2
+--[[
+  Toutes les combien de MILLISECONDES l'hote envoie son recensement.
+
+  ATTENTION : EN SECONDES, LES CREATURES SAUTAIENT. `os.time()` n a qu une
+  resolution d une seconde ; a ce rythme un requin se teleporte d un bond toutes
+  les deux secondes chez les autres. On compte en millisecondes sur notre propre
+  horloge, et deux fois par seconde suffit pour que l interpolation ait de quoi
+  travailler.
+]]
+local RECENSEMENT_MS = 500
+
+--[[
+  Retard d affichage des creatures.
+
+  ATTENTION : PLUS LONG QUE CELUI DES JOUEURS, ET C EST VOULU. Les joueurs
+  arrivent dix fois par seconde, les creatures deux fois : il faut un retard plus
+  grand pour avoir presque toujours deux positions qui encadrent l instant
+  affiche. Trop court, et on extrapole en permanence.
+]]
+local RETARD_CREATURES_MS = 600
 
 --- Toutes les combien de secondes on balaye le monde pour trouver les creatures.
 local BALAYAGE_S = 10
@@ -87,6 +105,45 @@ local creatures = {}
 local dernierRecensement = 0
 local dernierBalayage = 0
 local dernierInventaire = 0
+
+--[[
+  LE MIROIR DES CREATURES.
+
+  ATTENTION : LE JEU FAIT APPARAITRE SES CREATURES CHEZ CHACUN, SEPAREMENT.
+  Rien ne relie le requin de l un a celui de l autre : ce ne sont pas les memes
+  acteurs, ils n ont pas le meme identifiant, et aucune de leurs graines
+  aleatoires n est partagee. Pour voir LE MEME requin il n y a qu un chemin :
+  masquer les siennes et afficher celles de l hote.
+
+  Trois modes, et le joueur peut en changer en jeu (F2) :
+    miroir   on masque les siennes, on affiche celles de l hote.
+    annonce  on ne touche a rien, on affiche juste ce que l hote signale.
+    rien     on ignore les creatures du serveur.
+
+  ATTENTION : ON MASQUE, ON NE DETRUIT PAS. Detruire un acteur que le jeu suit
+  casse ses generateurs : ils gardent des references, et certains relancent une
+  apparition en boucle quand leur creature disparait sans raison. Masquer +
+  couper la collision + couper le tick donne le meme resultat a l ecran, se
+  defait en une ligne, et ne touche a rien que le jeu compte.
+]]
+local modeCreatures = "miroir"
+
+--- Les creatures locales qu on a masquees : cle -> acteur, pour pouvoir les rendre.
+local masquees = {}
+
+--- Les fantomes de creatures, par identifiant du serveur.
+local fantomesCreatures = {}
+
+--[[
+  Les classes de creatures vues localement.
+
+  ATTENTION : C EST LA CLE DE TOUT LE MIROIR. On ne connait aucun chemin d asset
+  (`/Game/.../BP_NPC_Shark.BP_NPC_Shark_C`) et les deviner casserait a la
+  premiere mise a jour du jeu. Mais le jeu du non-hote fait apparaitre SES
+  propres requins : on prend la classe sur l un d eux avant de le masquer, et on
+  s en sert pour faire apparaitre ceux de l hote. Zero nom devine.
+]]
+local classesCreatures = {}
 
 --- Ce que le serveur nous a dit en dernier.
 local heureServeur = nil
@@ -578,6 +635,50 @@ local function faireApparaitre(x, y, z, classe)
 end
 
 --[[
+  Fait apparaitre une creature de l hote. Rend l acteur, ou nil.
+
+  ATTENTION : `AutoPossessAI` DOIT ETRE COUPE AVANT `FinishSpawningActor`. Sans
+  ca le pion recoit un controleur d intelligence artificielle des qu il existe :
+  il se met a nager ou il veut, a chasser et a mordre, pendant qu on le teleporte
+  ailleurs dix fois par seconde. Le joueur aurait alors DEUX requins -- le vrai
+  fantome et celui qui le poursuit. C est tout l interet de l apparition
+  differee : entre `Begin` et `Finish`, l acteur existe mais n a pas encore
+  demarre.
+
+  ATTENTION : PAS DE COLLISION, PAS DE DEGATS. Un fantome n est qu une image : il
+  ne doit ni bloquer le joueur, ni le blesser, ni pouvoir etre tue -- la vraie
+  creature, celle qui compte, vit chez l hote.
+]]
+local function faireApparaitreCreature(x, y, z, classe)
+    local m = monde()
+    local gs = statistiques()
+    if not estValide(m) or not estValide(gs) or not classe then return nil end
+
+    local t = transformation(x, y, z)
+    local acteur = sur(function()
+        return gs:BeginDeferredActorSpawnFromClass(m, classe, t, 1, nil, 0)
+    end, nil)
+    if not estValide(acteur) then
+        noterFait("miroir", "apparition refusee")
+        return nil
+    end
+
+    -- 0 = EAutoPossessAI::Disabled. A poser AVANT que l acteur demarre.
+    pcall(function() acteur.AutoPossessAI = 0 end)
+    pcall(function() acteur.bCanBeDamaged = false end)
+
+    sur(function() return gs:FinishSpawningActor(acteur, t, 0) end, nil)
+    if not estValide(acteur) then return nil end
+
+    pcall(function() acteur:SetActorEnableCollision(false) end)
+    -- Ceinture et bretelles : si un controleur s est quand meme attache, on le lache.
+    pcall(function() acteur:DetachFromControllerPendingDestroy() end)
+
+    noterFait("miroir", "fantomes de creatures")
+    return acteur
+end
+
+--[[
   Pose la vitesse sur le composant de mouvement du pion distant.
 
   ⚠️ C'EST CA QUI ANIME, PAS UNE ANIMATION REPLIQUEE. Le pion distant porte le
@@ -642,8 +743,8 @@ end
      s'arrete : un joueur qui continue de courir tout seul a travers la carte est
      pire qu'un joueur fige.
 ]]
-local function ouAfficher(f)
-    local cible = horlogeMs - RETARD_RENDU_MS
+local function ouAfficher(f, retard)
+    local cible = horlogeMs - (retard or RETARD_RENDU_MS)
     local n = #f.tampon
     if n == 0 then return nil end
 
@@ -732,6 +833,10 @@ local function lireDuPont()
 
         elseif mot == "hote" then
             lot.hote = ligne:match("^hote%s+(%S+)") == "1"
+
+        elseif mot == "mode" then
+            -- Le lanceur decide du mode ; le mod l applique.
+            lot.mode = ligne:match("^mode%s+(%a+)")
 
         elseif mot == "rdv" then
             local rx, ry, rz, ryaw, rqui = ligne:match("^rdv%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.*)$")
@@ -1005,6 +1110,71 @@ local function estCreature(nom)
     return false
 end
 
+--[[
+  Masque une creature locale, et retient comment la rendre.
+
+  ATTENTION : TROIS GESTES, ET LES TROIS SONT NECESSAIRES. Cacher ne suffit pas
+  (elle mord toujours), couper la collision ne suffit pas (elle nage et declenche
+  des sons), couper le tick ne suffit pas (elle reste visible, figee en plein
+  milieu). Les trois ensemble donnent une creature qui n existe plus pour le
+  joueur -- sans etre detruite, donc sans casser le generateur qui la suit.
+]]
+local function masquerCreatureLocale(cle, acteur)
+    if masquees[cle] then return end
+    local ok = sur(function()
+        acteur:SetActorHiddenInGame(true)
+        return true
+    end, false)
+    pcall(function() acteur:SetActorEnableCollision(false) end)
+    pcall(function() acteur:SetActorTickEnabled(false) end)
+    if ok then
+        masquees[cle] = acteur
+        noterFait("miroir", "creatures locales masquees")
+    else
+        noterFait("miroir", "masquage refuse")
+    end
+end
+
+--- Rend toutes les creatures locales qu on avait masquees.
+local function rendreLesCreaturesLocales()
+    local combien = 0
+    for cle, acteur in pairs(masquees) do
+        if estValide(acteur) then
+            pcall(function() acteur:SetActorHiddenInGame(false) end)
+            pcall(function() acteur:SetActorEnableCollision(true) end)
+            pcall(function() acteur:SetActorTickEnabled(true) end)
+            combien = combien + 1
+        end
+        masquees[cle] = nil
+    end
+    if combien > 0 then journal(combien .. " creature(s) locale(s) rendue(s).") end
+end
+
+--- Detruit tous les fantomes de creatures.
+local function oublierLesCreaturesDistantes()
+    for id, f in pairs(fantomesCreatures) do
+        if estValide(f.acteur) then pcall(function() f.acteur:K2_DestroyActor() end) end
+        fantomesCreatures[id] = nil
+    end
+end
+
+--[[
+  Retient la classe d une creature locale.
+
+  ATTENTION : SANS ELLE, LE MIROIR NE PEUT RIEN AFFICHER. On ne connait aucun
+  chemin d asset, et les deviner casserait a la premiere mise a jour du jeu. La
+  classe se prend sur une creature que le jeu du joueur a fait apparaitre lui-meme.
+]]
+local function retenirClasse(acteur)
+    local nom = nomClasse(acteur)
+    if nom == "?" or classesCreatures[nom] then return end
+    local classe = sur(function() return acteur:GetClass() end, nil)
+    if classe then
+        classesCreatures[nom] = classe
+        noterFait("miroir.classes", tostring(nom))
+    end
+end
+
 local function balayerLesCreatures()
     local trouvees = 0
     for _, famille in ipairs({ "VoyageNPCBaseCharacter", "Pawn", "Character" }) do
@@ -1020,6 +1190,15 @@ local function balayerLesCreatures()
                             creatures[cle] = { acteur = a, classe = n }
                             trouvees = trouvees + 1
                         end
+                        --[[
+                          Chez un NON-hote en mode miroir, la creature locale sert
+                          deux fois : elle donne sa classe (c est la seule facon
+                          d en faire apparaitre une), puis elle est masquee.
+                        ]]
+                        if cle and not jeSuisHote and modeCreatures == "miroir" then
+                            retenirClasse(a)
+                            masquerCreatureLocale(cle, a)
+                        end
                     end
                 end
             end
@@ -1029,6 +1208,91 @@ local function balayerLesCreatures()
     end
     if trouvees > 0 then noterFait("creatures", tostring(trouvees) .. " reperees") end
     return trouvees
+end
+
+--[[
+  Applique ce que l hote voit.
+
+  ATTENTION : LE MOD NE DECIDE PAS DE CE QUI EXISTE, IL AFFICHE. La liste vient
+  du serveur, qui n ecoute que l hote. Un fantome dont l identifiant disparait de
+  la liste est detruit : c est ainsi qu une creature morte chez l hote disparait
+  chez les autres.
+]]
+local function suivreLesCreatures(lot)
+    if jeSuisHote or modeCreatures ~= "miroir" then return end
+    local recues = lot.creatures or {}
+
+    for id, c in pairs(recues) do
+        local f = fantomesCreatures[id]
+
+        -- Un acteur ne survit pas a un changement de carte.
+        if f and not estValide(f.acteur) then
+            fantomesCreatures[id] = nil
+            f = nil
+        end
+
+        if not f then
+            local classe = classesCreatures[c.classe]
+            if classe then
+                local acteur = faireApparaitreCreature(c.x, c.y, c.z, classe)
+                if acteur then
+                    fantomesCreatures[id] = {
+                        acteur = acteur, classe = c.classe, tampon = {},
+                        x = c.x, y = c.y, z = c.z,
+                    }
+                end
+            else
+                --[[
+                  On n a jamais vu cette classe localement : impossible d en faire
+                  apparaitre une. On le DIT plutot que de laisser un trou -- c est
+                  exactement le genre d absence qu on cherche a ne pas livrer en
+                  silence.
+                ]]
+                noterFait("miroir.manque", tostring(c.classe))
+            end
+        else
+            empiler(f, { x = c.x, y = c.y, z = c.z, yaw = c.yaw, vx = 0, vy = 0, vz = 0 })
+            local ou = ouAfficher(f, RETARD_CREATURES_MS)
+            if ou then
+                --[[
+                  La vitesse est DEDUITE du deplacement, pas transmise : l hote ne
+                  lit pas la velocite des creatures. Sans elle, le blueprint
+                  d animation les croit immobiles et le requin glisse sans nager.
+                ]]
+                local dx, dy, dz = ou.x - f.x, ou.y - f.y, ou.z - f.z
+                local parSeconde = 1000.0 / PERIODE_MS
+                f.x, f.y, f.z = ou.x, ou.y, ou.z
+                deplacer(f.acteur, ou.x, ou.y, ou.z, ou.yaw)
+                animer(f.acteur, dx * parSeconde, dy * parSeconde, dz * parSeconde)
+            end
+        end
+    end
+
+    -- Ce qui n est plus dans la liste n existe plus chez l hote.
+    for id, f in pairs(fantomesCreatures) do
+        if not recues[id] then
+            if estValide(f.acteur) then pcall(function() f.acteur:K2_DestroyActor() end) end
+            fantomesCreatures[id] = nil
+        end
+    end
+end
+
+--[[
+  Change de mode, et defait proprement ce que l ancien avait fait.
+
+  ATTENTION : QUITTER LE MIROIR DOIT TOUT RENDRE. Un joueur qui coupe le miroir
+  parce que quelque chose cloche ne doit pas se retrouver dans un ocean vide, avec
+  ses propres requins masques pour toujours.
+]]
+local function changerDeMode(nouveau)
+    if nouveau == modeCreatures then return end
+    modeCreatures = nouveau
+    oublierLesCreaturesDistantes()
+    if nouveau ~= "miroir" then rendreLesCreaturesLocales() end
+    -- Le prochain battement rebalaye : les creatures locales seront reprises.
+    dernierBalayage = 0
+    journal("creatures : mode " .. nouveau .. ".")
+    ecran("creatures : " .. nouveau, BLANC, 5.0)
 end
 
 --[[
@@ -1272,7 +1536,20 @@ local function poserLesCrochets()
                     local n = nomClasse(objet)
                     if not estCreature(n) then return end
                     local cle = sur(function() return objet:GetFName():ToString() end, nil)
-                    if cle then creatures[cle] = { acteur = objet, classe = n } end
+                    if not cle then return end
+                    creatures[cle] = { acteur = objet, classe = n }
+                    --[[
+                      ATTENTION : LE JEU CONTINUE D EN FAIRE APPARAITRE CHEZ LE
+                      NON-HOTE. Les masquer seulement au balayage, toutes les dix
+                      secondes, laisserait un requin bien reel nager dix secondes
+                      au milieu des fantomes. Ici on le prend a la seconde ou il
+                      nait -- et on retient sa classe au passage, parce que c est
+                      la seule source possible.
+                    ]]
+                    if not jeSuisHote and modeCreatures == "miroir" then
+                        retenirClasse(objet)
+                        masquerCreatureLocale(cle, objet)
+                    end
                 end)
             end)
         end)
@@ -1433,7 +1710,7 @@ local function montrerLeCoffre()
 end
 
 local function montrerAide()
-    ecran("F3 point de retrouvailles - F4 aide - F5 rejoindre - F6 qui est la - F7 installer le monde - F9 publier - F10 coffre - F11 marquer - F12 salut", BLANC, 14.0)
+    ecran("F2 creatures (" .. modeCreatures .. ") - F3 point de retrouvailles - F4 aide - F5 rejoindre - F6 qui est la - F7 installer le monde - F9 publier - F10 coffre - F11 marquer - F12 salut", BLANC, 16.0)
 end
 
 --[[
@@ -1462,6 +1739,15 @@ local function poserLesTouches()
         end)
     end
 
+    --[[
+      ATTENTION : F2 EST UN INTERRUPTEUR DE SECOURS, PAS UN REGLAGE DE CONFORT. Le
+      miroir masque les creatures du joueur et en fait apparaitre d autres : si
+      quelque chose tourne mal en pleine partie, il doit pouvoir tout rendre sans
+      quitter le jeu ni chercher dans le lanceur.
+    ]]
+    lier("F2", function()
+        changerDeMode(modeCreatures == "miroir" and "annonce" or "miroir")
+    end)
     lier("F3", function()
         ecran("point de retrouvailles pose ici.", VERT, 6.0)
         demanderAuLanceur("rdv-poser")
@@ -1505,6 +1791,14 @@ local function battement()
     if auMenu or not estValide(pion) then
         -- Au menu les fantomes n'ont plus de monde ou vivre.
         if next(fantomes) ~= nil then oublierTous() end
+        if next(fantomesCreatures) ~= nil then oublierLesCreaturesDistantes() end
+        --[[
+          ATTENTION : LES CREATURES MASQUEES APPARTENAIENT A L ANCIEN MONDE. Garder
+          la table apres un retour au menu ferait croire au miroir qu il les a deja
+          masquees, et les vraies creatures de la partie suivante resteraient
+          visibles a cote des fantomes.
+        ]]
+        masquees = {}
         creatures = {}
         annoncer(auMenu and "au menu — rien a envoyer tant qu'une partie n'est pas chargee."
                         or "chargement…")
@@ -1554,22 +1848,40 @@ local function battement()
                 journal(envoyes .. " positions envoyees" .. (parFichier and " (par fichier)" or ""))
             end
         else
-            -- Le pont s'est ferme : on rouvrira au prochain passage.
+            --[[
+              Le pont s'est ferme : on rouvrira au prochain passage.
+
+              ATTENTION : ON REND LES CREATURES LOCALES. Sans ca, un joueur qui perd
+              la connexion se retrouve dans un ocean vide -- les siennes masquees,
+              celles de l hote plus mises a jour -- et croit le jeu casse.
+            ]]
             pcall(function() sortie:close() end)
             sortie = nil
             dernierEtat = ""
             oublierTous()
+            oublierLesCreaturesDistantes()
+            rendreLesCreaturesLocales()
         end
     end
 
-    -- Le recensement des creatures et la declaration d'inventaire sont rares.
+    --[[
+      Le recensement et l inventaire sont rares.
+
+      ATTENTION : LE BALAYAGE SERT AUX DEUX COTES. Chez l hote il trouve les
+      creatures a rapporter ; chez les autres, en mode miroir, il trouve celles a
+      masquer et donne leurs classes. Le reserver a l hote -- ce qu il faisait --
+      laissait le miroir sans aucune classe a faire apparaitre.
+    ]]
     local maintenant = os.time()
-    if jeSuisHote and maintenant - dernierBalayage >= BALAYAGE_S then
+    local besoinDeBalayer = jeSuisHote or modeCreatures == "miroir"
+    if besoinDeBalayer and maintenant - dernierBalayage >= BALAYAGE_S then
         dernierBalayage = maintenant
         pcall(balayerLesCreatures)
     end
-    if jeSuisHote and maintenant - dernierRecensement >= RECENSEMENT_S then
-        dernierRecensement = maintenant
+    -- En millisecondes : `os.time()` ne descend pas sous la seconde, et les
+    -- creatures sautaient d un bond entre deux rapports.
+    if jeSuisHote and horlogeMs - dernierRecensement >= RECENSEMENT_MS then
+        dernierRecensement = horlogeMs
         pcall(recenserPourLeServeur)
     end
     if maintenant - dernierInventaire >= INVENTAIRE_S then
@@ -1586,9 +1898,26 @@ local function battement()
             jeSuisHote = lot.hote
             journal(jeSuisHote and "tu es l'hote : tes creatures seront partagees."
                                 or "tu n'es plus l'hote.")
+            --[[
+              ATTENTION : DEVENIR HOTE DOIT TOUT RENDRE. L hote voit les VRAIES
+              creatures -- les siennes. S il gardait ses fantomes et ses creatures
+              masquees, il rapporterait au serveur un ocean vide tout en voyant des
+              images qui ne sont a personne.
+            ]]
+            if jeSuisHote then
+                oublierLesCreaturesDistantes()
+                rendreLesCreaturesLocales()
+            end
+            dernierBalayage = 0
+        end
+
+        -- Le lanceur decide du mode ; on ne le change qu a la demande.
+        if lot.mode and lot.mode ~= modeCreatures then
+            pcall(function() changerDeMode(lot.mode) end)
         end
         if lot.coffre and #lot.coffre > 0 then coffreServeur = lot.coffre end
         pcall(function() suivreLesAutres(lot) end)
+        pcall(function() suivreLesCreatures(lot) end)
         pcall(function() montrerLesFaits(lot) end)
         pcall(appliquerHeure)
     end
@@ -1619,6 +1948,7 @@ if VOYAGE_ESSAI then
         trouverPion = trouverPion,
         pointDeRendezVous = function() return rendezVous end,
         heureDuServeur = function() return heureServeur end,
+        modeCreatures = function() return modeCreatures end,
         estCreature = estCreature,
         ouAfficher = ouAfficher,
         empiler = empiler,

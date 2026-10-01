@@ -38,6 +38,33 @@ contextBridge.exposeInMainWorld('voyage', {
   */
   identite: () => ipcRenderer.invoke('identite:lire'),
   regenererIdentite: () => ipcRenderer.invoke('identite:regenerer'),
+
+  // ── Héberger depuis chez soi ────────────────────────────────────
+  /*
+    ⚠️ LA PAGE NE LANCE PAS DE PROCESSUS. Elle demande, le processus principal
+       decide : c'est lui qui connait le chemin du serveur embarqué, les secrets
+       et le dossier de données. Une page web qui pourrait démarrer un
+       programme n'aurait plus de limite.
+  */
+  etatHebergement: () => ipcRenderer.invoke('heberger:etat'),
+  demarrerHebergement: (reglages) => ipcRenderer.invoke('heberger:demarrer', reglages),
+  arreterHebergement: () => ipcRenderer.invoke('heberger:arreter'),
+  commandeHebergement: (texte) => ipcRenderer.invoke('heberger:commande', texte),
+  joueursHeberges: () => ipcRenderer.invoke('heberger:joueurs'),
+
+  surLigneHebergement: (rappel) => {
+    ipcRenderer.removeAllListeners('heberger:ligne')
+    ipcRenderer.on('heberger:ligne', (_e, ligne) => {
+      if (typeof ligne === 'string') return rappel(ligne)
+      if (ligne && typeof ligne === 'object') {
+        return rappel({
+          heure: typeof ligne.heure === 'string' ? ligne.heure : '',
+          cle: typeof ligne.cle === 'string' ? ligne.cle : '',
+          valeurs: ligne.valeurs && typeof ligne.valeurs === 'object' ? ligne.valeurs : undefined,
+        })
+      }
+    })
+  },
   ajouterServeur: (adresse) => ipcRenderer.invoke('serveurs:ajouter', adresse),
   retirerServeur: (hote, port) => ipcRenderer.invoke('serveurs:retirer', hote, port),
   rapport: (dossier) => ipcRenderer.invoke('rapport:lire', dossier),
@@ -55,6 +82,7 @@ contextBridge.exposeInMainWorld('voyage', {
 
   // ── Reglages ─────────────────────────────────────────────────────────────
   changerLangue: (langue) => ipcRenderer.invoke('reglages:langue', langue),
+  changerCreatures: (mode) => ipcRenderer.invoke('reglages:creatures', mode),
   version: () => ipcRenderer.invoke('appli:version'),
   ouvrirDossier: (dossier) => ipcRenderer.invoke('dossier:ouvrir', dossier),
 

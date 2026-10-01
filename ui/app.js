@@ -301,9 +301,39 @@ async function chargerServeurs() {
   for (const s of liste) boite.append(ligneServeur(s))
 }
 
+/*
+  ⚠️ ON ACCEPTE UN NOM AUTANT QU'UNE ADRESSE. « Voyage Public 2 » est ce que les
+     gens retiennent et se disent ; « 144.217.162.237:30160 » est ce que la
+     machine comprend. Demander la seconde forme quand la première suffit, c'est
+     transformer « rejoins-moi » en dictée de douze chiffres.
+
+  ⚠️ UNE ADRESSE RESTE UNE ADRESSE. On ne cherche dans l'annuaire que si la
+     saisie n'en est pas une : un serveur privé, lui, n'y figure pas, et doit
+     continuer de s'ajouter en tapant son adresse.
+*/
+function ressembleAUneAdresse(texte) {
+  return /^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(String(texte).trim()) && /[.:]/.test(texte)
+}
+
 $('btn-ajouter').addEventListener('click', async () => {
   const champ = $('adresse')
-  const r = deballer(await window.voyage.ajouterServeur(champ.value))
+  const saisie = champ.value.trim()
+  if (!saisie) return
+
+  let aAjouter = saisie
+
+  if (!ressembleAUneAdresse(saisie)) {
+    dire(T('serv.cherche', { nom: saisie }), 'info')
+    const liste = deballer(await window.voyage.serveurs()) ?? []
+    const cible = saisie.toLowerCase()
+    const trouve =
+      liste.find((x) => String(x.nom ?? x.nomAnnonce ?? '').toLowerCase() === cible) ??
+      liste.find((x) => String(x.nom ?? x.nomAnnonce ?? '').toLowerCase().includes(cible))
+    if (!trouve) return dire(T('serv.introuvableNom'), 'erreur')
+    aAjouter = `${trouve.hote}:${trouve.port}`
+  }
+
+  const r = deballer(await window.voyage.ajouterServeur(aAjouter))
   if (!r) return
   if (!r.ok) return dire(r.erreur, 'erreur')
   champ.value = ''
@@ -890,6 +920,155 @@ $('btn-ouvrir-jeu').addEventListener('click', async () => {
   deballer(await window.voyage.ouvrirDossier(dossierJeu))
 })
 
+// ── Héberger depuis chez soi ────────────────────────────────────────────────
+
+/*
+  ⚠️ C'EST LA SEULE FAÇON D'HÉBERGER AVEC SA PROPRE PARTIE. Sur un serveur loué,
+     publier un monde demande le mot de passe de publication, que seul celui qui
+     tient l'hébergement possède. Ici le lanceur écrit la sauvegarde directement
+     dans le dossier du serveur, avant qu'il démarre.
+*/
+let lignesHeb = []
+let minuterieHeb = null
+
+function ecrireJournalHeb(lignes) {
+  lignesHeb = lignes.slice(-400)
+  const boite = $('heb-journal')
+  // textContent : ces lignes viennent du serveur, jamais interprétées.
+  boite.textContent = lignesHeb.map(ligneJournal).join('\n')
+  boite.hidden = lignesHeb.length === 0
+  boite.scrollTop = boite.scrollHeight
+}
+
+window.voyage.surLigneHebergement((ligne) => ecrireJournalHeb([...lignesHeb, ligne]))
+
+function montrerHebergement(etat) {
+  const actif = Boolean(etat?.actif)
+  const r = etat?.reglages
+
+  $('heb-etat').textContent = actif ? T('serv.enLigne') : T('serv.horsLigne')
+  $('heb-etat').className = `etat ${actif ? 'ok' : ''}`.trim()
+  $('heb-etat-titre').textContent = actif && r ? T('heb.enMarche', { nom: r.nom, port: r.port }) : T('heb.arrete')
+  $('heb-etat-detail').textContent = actif ? T('heb.pendant') : T('heb.avant')
+
+  $('btn-heb-demarrer').disabled = actif
+  $('btn-heb-arreter').disabled = !actif
+  for (const id of ['heb-nom', 'heb-mdp', 'heb-places', 'heb-port', 'heb-partage', 'heb-public']) {
+    const champ = $(id)
+    if (champ) champ.disabled = actif
+  }
+  for (const id of ['heb-cible', 'heb-duree', 'btn-heb-expulser', 'btn-heb-bannir', 'heb-commande', 'btn-heb-commande']) {
+    const champ = $(id)
+    if (champ) champ.disabled = !actif
+  }
+
+  if (etat?.lignes) ecrireJournalHeb(etat.lignes)
+
+  if (actif) demarrerSuiviHebergement()
+  else arreterSuiviHebergement()
+}
+
+function arreterSuiviHebergement() {
+  if (minuterieHeb) clearInterval(minuterieHeb)
+  minuterieHeb = null
+  $('heb-joueurs').textContent = T('heb.personne')
+  $('heb-compte').textContent = '—'
+  $('heb-annuaire').textContent = '—'
+}
+
+function demarrerSuiviHebergement() {
+  if (minuterieHeb) return
+  lireLesJoueursHeberges()
+  minuterieHeb = setInterval(lireLesJoueursHeberges, 3000)
+}
+
+async function lireLesJoueursHeberges() {
+  const d = deballer(await window.voyage.joueursHeberges())
+  if (!d) return
+
+  const joueurs = d.joueurs ?? []
+  $('heb-joueurs').textContent = joueurs.length
+    ? joueurs
+        .map((j) => {
+          const marques = []
+          if (j.hote) marques.push('hôte')
+          if (j.role && j.role !== 'joueur' && j.role !== 'hote') marques.push(j.role)
+          return `${j.nom}${marques.length ? ` (${marques.join(', ')})` : ''} — ${j.ping} ms`
+        })
+        .join('  ·  ')
+    : T('heb.personne')
+  $('heb-compte').textContent = String(joueurs.length)
+
+  /*
+    ⚠️ L'ANNUAIRE SERT DE TEST DE JOIGNABILITÉ, et c'est sa deuxième utilité. Il
+       INTERROGE l'adresse annoncée avant de l'accepter : s'il y arrive, le port
+       est bien ouvert ; s'il échoue, il dit pourquoi. Pas besoin d'un service
+       séparé pour répondre à « est-ce que mes amis peuvent entrer ? ».
+  */
+  const a = d.annuaire
+  const etatHeb = deballer(await window.voyage.etatHebergement())
+  const port = etatHeb?.reglages?.port ?? '?'
+  if (!a || !a.actif) {
+    $('heb-annuaire').textContent = T('heb.annuaireEteint')
+  } else if (a.reussites > 0 && a.echecs === 0) {
+    $('heb-annuaire').textContent = T('heb.annuaireOk')
+  } else if (a.derniereErreur) {
+    $('heb-annuaire').textContent = T('heb.annuaireNon', { raison: a.derniereErreur, port })
+  }
+}
+
+$('btn-heb-demarrer').addEventListener('click', async () => {
+  $('btn-heb-demarrer').disabled = true
+  const etat = deballer(
+    await window.voyage.demarrerHebergement({
+      nom: $('heb-nom').value.trim(),
+      motDePasse: $('heb-mdp').value,
+      maxJoueurs: $('heb-places').value,
+      port: $('heb-port').value,
+      partagerLaPartie: $('heb-partage').checked,
+      public: $('heb-public').checked,
+    }),
+  )
+  if (!etat) {
+    $('btn-heb-demarrer').disabled = false
+    return
+  }
+  montrerHebergement(etat)
+})
+
+$('btn-heb-arreter').addEventListener('click', async () => {
+  montrerHebergement(deballer(await window.voyage.arreterHebergement()))
+})
+
+/*
+  Expulser et bannir passent par la console du serveur : c'est LUI qui décide,
+  vérifie le rôle et écrit la sanction. La page ne fait que demander.
+*/
+async function moderer(verbe) {
+  const nom = $('heb-cible').value.trim()
+  if (!nom) return dire(T('heb.donneCible'), 'erreur')
+  const duree = $('heb-duree').value.trim()
+  const texte = verbe === 'bannir' ? `/bannir ${nom} ${duree}`.trim() : `/expulser ${nom}`
+  const r = await window.voyage.commandeHebergement(texte)
+  if (r && r.ok) {
+    $('heb-cible').value = ''
+    dire(T(verbe === 'bannir' ? 'heb.banni' : 'heb.expulse', { nom }), 'bon')
+  }
+}
+
+$('btn-heb-expulser').addEventListener('click', () => moderer('expulser'))
+$('btn-heb-bannir').addEventListener('click', () => moderer('bannir'))
+
+$('heb-commande-forme').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const champ = $('heb-commande')
+  const texte = champ.value.trim()
+  if (!texte) return
+  champ.value = ''
+  const r = await window.voyage.commandeHebergement(texte)
+  if (!r || !r.ok) champ.value = texte
+})
+
 // ── Demarrage ───────────────────────────────────────────────────────────────
 
 ;(async () => {
@@ -913,7 +1092,32 @@ $('btn-ouvrir-jeu').addEventListener('click', async () => {
     L'identite se lit au demarrage : le fichier est cree au premier passage, et
     c'est l'empreinte que l'hote d'un serveur demandera.
   */
+  /*
+    ⚠️ LE CHOIX NE S'APPLIQUE QU'A LA PROCHAINE CONNEXION. Le mode part au pont
+       au moment ou il demarre ; le changer pendant qu'une partie tourne ne
+       toucherait rien, et laisser croire le contraire serait pire que de le
+       dire. F2 en jeu, lui, bascule tout de suite.
+  */
+  $('choix-creatures').value = reglages?.creatures ?? 'miroir'
+  $('choix-creatures').addEventListener('change', async (e) => {
+    await window.voyage.changerCreatures(e.target.value)
+  })
+
   await montrerIdentite()
+
+  /*
+    On remet les réglages d'hébergement d'une fois sur l'autre : personne n'a
+    envie de retaper le nom de son serveur à chaque ouverture.
+  */
+  const h = reglages?.hebergement ?? {}
+  $('heb-nom').value = h.nom ?? (reglages?.nomJoueur ? `Partie de ${reglages.nomJoueur}` : '')
+  $('heb-mdp').value = h.motDePasse ?? ''
+  $('heb-places').value = h.maxJoueurs ?? 4
+  $('heb-port').value = h.port ?? 7777
+  $('heb-partage').checked = h.partagerLaPartie !== false
+  $('heb-public').checked = Boolean(h.public)
+
+  montrerHebergement(deballer(await window.voyage.etatHebergement()))
 
   const etatLien = deballer(await window.voyage.etatLien())
   if (etatLien) {

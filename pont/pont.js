@@ -62,6 +62,19 @@ const signature = argument('sig', '')
 /** Jeton de reprise garde par le lanceur d'une session a l'autre. */
 let jetonReprise = argument('reprise', '')
 
+/*
+  Que faire des creatures de l'hote : `miroir`, `annonce` ou `rien`.
+
+  ⚠️ LE MODE EST UN CHOIX LOCAL, PAS UN REGLAGE DU SERVEUR. Masquer ses propres
+     creatures pour afficher celles d'un autre ne change rien pour les autres
+     joueurs : chacun decide de ce qu'il voit. Le serveur, lui, ne fait que
+     fournir la liste.
+*/
+const MODES_CREATURES = ['miroir', 'annonce', 'rien']
+const modeCreatures = MODES_CREATURES.includes(argument('creatures', 'miroir'))
+  ? argument('creatures', 'miroir')
+  : 'miroir'
+
 // ── Les mots du pont ────────────────────────────────────────────────────────
 
 /*
@@ -197,6 +210,7 @@ function deposerPourLeJeu(tick, force = false) {
   const lignes = [`v3 ${tick || 0} ${autresJoueurs.length}`]
 
   lignes.push(`hote ${jeSuisHote ? 1 : 0}`)
+  lignes.push(`mode ${modeCreatures}`)
 
   if (rendezVous && rendezVous.pos) {
     const r = rendezVous
@@ -240,7 +254,7 @@ function deposerPourLeJeu(tick, force = false) {
        des doublons de ses propres requins.
   */
   if (!jeSuisHote) {
-    for (const c of creaturesServeur) {
+    for (const c of creaturesServeur.values()) {
       lignes.push(
         `n ${c.id} ${nombre(c.pos?.x)} ${nombre(c.pos?.y)} ${nombre(c.pos?.z)} ` +
           `${nombre(c.rot?.yaw)} ${c.vie === null || c.vie === undefined ? -1 : Math.round(c.vie)} ` +
@@ -290,7 +304,32 @@ let jeton = null
 let monId = null
 let jeSuisHote = false
 let autresJoueurs = []
-let creaturesServeur = []
+
+/*
+  Les creatures de l'hote, par identifiant, avec la derniere fois qu'on les a
+  vues.
+
+  ⚠️ ON NE PEUT PAS REMPLACER LA LISTE D'UN COUP. Le serveur n'envoie pas toutes
+     les creatures a chaque instantane : les proches arrivent souvent, les
+     lointaines rarement. Remplacer la table par ce que porte le dernier paquet
+     ferait disparaitre puis reapparaitre les lointaines dix fois par seconde.
+     On garde donc chacune, et on l'oublie quand elle cesse d'etre annoncee.
+*/
+const creaturesServeur = new Map()
+
+/** Au-dela, une creature n'est plus annoncee : elle est morte, ou trop loin. */
+const OUBLI_CREATURE_MS = 4000
+
+function retenirLesCreatures(liste) {
+  const maintenant = Date.now()
+  for (const c of liste) {
+    if (!c || c.id === undefined) continue
+    creaturesServeur.set(c.id, { ...c, vuLe: maintenant })
+  }
+  for (const [id, c] of creaturesServeur) {
+    if (maintenant - c.vuLe > OUBLI_CREATURE_MS) creaturesServeur.delete(id)
+  }
+}
 let coffreServeur = []
 let tempsServeur = null
 let faitsAMontrer = []
@@ -363,7 +402,7 @@ socket.on('message', (tampon) => {
           log(jeSuisHote ? 'tu es maintenant l’hôte' : 'tu n’es plus l’hôte')
         }
       }
-      if (Array.isArray(m.pnj)) creaturesServeur = m.pnj
+      if (Array.isArray(m.pnj)) retenirLesCreatures(m.pnj)
       if (m.coffre?.coffre) coffreServeur = m.coffre.coffre
       if (m.temps) tempsServeur = m.temps
       if (m.monde) {
@@ -427,6 +466,16 @@ socket.on('message', (tampon) => {
     }
 
     case 'pnj-fait':
+      /*
+        ⚠️ UNE MORT OU UNE DISPARITION RETIRE LA CREATURE TOUT DE SUITE. Attendre
+           l'expiration laisserait son fantome nager quatre secondes apres que
+           l'hote l'a tuee — exactement le genre de decalage qui fait douter de
+           tout le reste.
+      */
+      if ((m.quoi === 'mort' || m.quoi === 'disparition') && m.id !== undefined) {
+        creaturesServeur.delete(m.id)
+      }
+      if (m.quoi === 'remise-a-zero') creaturesServeur.clear()
       if (m.quoi === 'mort') {
         const texte = `une créature est morte (${m.classe || '?'})`
         log(texte)

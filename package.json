@@ -1,12 +1,13 @@
 {
   "name": "symbiose-voyage-lanceur",
-  "version": "0.6.5",
+  "version": "0.6.6",
   "description": "Lanceur Voyage — installe UE4SS et les mods dans The Last Caretaker, liste les serveurs et tient le lien avec eux.",
   "main": "src/principal.js",
   "scripts": {
     "start": "electron .",
-    "essais": "node essais/detection.js && node essais/langues.js && node essais/sauvegardes.js && node essais/paquet.js",
-    "batir": "electron-builder --win"
+    "essais": "node essais/detection.js && node essais/langues.js && node essais/sauvegardes.js && node essais/heberger.js && node essais/paquet.js",
+    "batir": "electron-builder --win",
+    "synchroniser": "node outils/synchroniser.js"
   },
   "author": "Symbiose Heritage Hosting",
   "license": "UNLICENSED",
@@ -30,12 +31,14 @@
       "ui/**/*",
       "mods/**/*",
       "pont/**/*",
+      "serveur/**/*",
       "ressources/ue4ss/**/*",
       "package.json"
     ],
     "asarUnpack": [
       "mods/**/*",
       "pont/**/*",
+      "serveur/**/*",
       "ressources/ue4ss/**/*"
     ],
     "win": {

@@ -114,12 +114,19 @@ function cibleComplete() {
      vient de le taper pour se connecter ; le redemander a chaque action
      lancee depuis le jeu serait absurde. Il part avec le processus.
 */
-function demarrer({ hote, port, nom, motDePasse = '', langue = 'fr' }) {
+function demarrer({ hote, port, nom, motDePasse = '', langue = 'fr', creatures = 'miroir' }) {
   if (actif()) arreter()
 
   const adresse = `${hote}:${port}`
   const arguments_ = [cheminPont(), '--serveur', adresse, '--nom', nom || 'Joueur', '--langue', langue]
   if (motDePasse) arguments_.push('--motdepasse', motDePasse)
+
+  /*
+    ⚠️ LE MODE DES CREATURES EST UN CHOIX LOCAL. Masquer ses propres creatures
+       pour afficher celles de l'hote ne change rien chez les autres : chacun
+       decide de ce qu'il voit. En jeu, F2 bascule sans passer par ici.
+  */
+  arguments_.push('--creatures', ['miroir', 'annonce', 'rien'].includes(creatures) ? creatures : 'miroir')
 
   /*
     ⚠️ LE LANCEUR SIGNE, LE PONT PORTE. La cle privee ne passe JAMAIS en

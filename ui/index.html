@@ -29,6 +29,7 @@
     <nav role="tablist">
       <button role="tab" aria-selected="true" data-onglet="installation" data-t="nav.installation"></button>
       <button role="tab" aria-selected="false" data-onglet="serveurs" data-t="nav.serveurs"></button>
+      <button role="tab" aria-selected="false" data-onglet="heberger" data-t="nav.heberger"></button>
       <button role="tab" aria-selected="false" data-onglet="monde" data-t="nav.monde"></button>
       <button role="tab" aria-selected="false" data-onglet="diagnostic" data-t="nav.diagnostic"></button>
       <button role="tab" aria-selected="false" data-onglet="reglages" data-t="nav.reglages"></button>
@@ -111,6 +112,14 @@
               <button class="action" id="btn-ajouter" data-t="serv.boutonAjouter"></button>
               <button class="action discret" id="btn-rafraichir" data-t="serv.actualiser"></button>
             </div>
+          </div>
+          <!--
+            On accepte un NOM autant qu'une adresse : la plupart des gens
+            retiennent « Voyage Public 2 », pas « 144.217.162.237:30160 ».
+            Le nom est cherché dans l'annuaire public.
+          -->
+          <div class="ligne">
+            <div class="detail note" data-t="serv.parNom"></div>
           </div>
         </div>
 
@@ -226,7 +235,99 @@
       </section>
 
 
-      <!-- ── Monde ────────────────────────────────────────────────────── -->
+      <!-- ── Héberger ──────────────────────────────────────────────────── -->
+      <!--
+        Le lanceur embarque le serveur. C'est la seule façon d'héberger avec SA
+        propre partie : sur un serveur loué, publier un monde demande le mot de
+        passe de publication, que seul celui qui tient l'hébergement possède.
+      -->
+      <section id="heberger" hidden>
+        <h2 data-t="heb.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" id="heb-etat-titre" data-t="heb.arrete"></div>
+              <div class="detail" id="heb-etat-detail" data-t="heb.avant"></div>
+            </div>
+            <div class="pousse">
+              <span class="etat" id="heb-etat">—</span>
+              <button class="action principal" id="btn-heb-demarrer" data-t="heb.demarrer"></button>
+              <button class="action discret" id="btn-heb-arreter" data-t="heb.arreter" disabled></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <input type="text" id="heb-nom" data-t-ph="heb.nomPlaceholder" maxlength="60" />
+            <input type="password" id="heb-mdp" data-t-ph="heb.mdpPlaceholder" maxlength="128" autocomplete="new-password" />
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="heb.places"></div>
+              <div class="detail" data-t="heb.placesDetail"></div>
+            </div>
+            <div class="pousse">
+              <input type="number" id="heb-places" value="4" min="1" max="16" />
+              <input type="number" id="heb-port" value="7777" min="1024" max="65000" />
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="heb.partageTitre"></div>
+              <div class="detail" data-t="heb.partageDetail"></div>
+            </div>
+            <div class="pousse">
+              <label class="interrupteur"><input type="checkbox" id="heb-partage" checked /> <span data-t="heb.partage"></span></label>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="heb.publicTitre"></div>
+              <div class="detail" data-t="heb.publicDetail"></div>
+            </div>
+            <div class="pousse">
+              <label class="interrupteur"><input type="checkbox" id="heb-public" /> <span data-t="heb.public"></span></label>
+            </div>
+          </div>
+          <div class="ligne">
+            <div class="detail note" data-t="heb.pareFeu"></div>
+          </div>
+        </div>
+
+        <h2 data-t="heb.joueursTitre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="heb.joueurs"></div>
+              <div class="detail" id="heb-joueurs" data-t="heb.personne"></div>
+            </div>
+            <div class="pousse"><span class="etat" id="heb-compte">—</span></div>
+          </div>
+          <!--
+            Expulser et bannir passent par la console du serveur, comme dans un
+            panneau d'hébergement : c'est le serveur qui décide, pas la page.
+          -->
+          <form class="ligne" id="heb-moderation">
+            <input type="text" id="heb-cible" data-t-ph="heb.ciblePlaceholder" maxlength="24" autocomplete="off" />
+            <input type="text" id="heb-duree" data-t-ph="heb.dureePlaceholder" maxlength="12" autocomplete="off" />
+            <div class="pousse">
+              <button class="action" type="button" id="btn-heb-expulser" data-t="heb.expulser"></button>
+              <button class="action discret" type="button" id="btn-heb-bannir" data-t="heb.bannir"></button>
+            </div>
+          </form>
+          <form class="ligne" id="heb-commande-forme">
+            <input type="text" id="heb-commande" data-t-ph="heb.commandePlaceholder" maxlength="240" autocomplete="off" />
+            <div class="pousse">
+              <button class="action discret" type="submit" id="btn-heb-commande" data-t="heb.envoyer"></button>
+            </div>
+          </form>
+          <div class="ligne">
+            <div class="detail note" id="heb-annuaire">—</div>
+          </div>
+        </div>
+
+        <pre class="journal" id="heb-journal" hidden></pre>
+      </section>
+
+      <!-- ── Monde ────────────────────────────────── -->
       <section id="monde" hidden>
         <h2 data-t="monde.tienne"></h2>
         <div class="carte">
@@ -357,6 +458,31 @@
           privee ne quitte jamais cette machine ; l'empreinte est ce que l'hote
           d'un serveur inscrit pour donner un role.
         -->
+        <!--
+          Le miroir masque les créatures du joueur et affiche celles de l'hôte :
+          c'est la seule façon de voir LE MÊME requin, puisque le jeu fait
+          apparaître les siennes chez chacun, séparément.
+        -->
+        <h2 data-t="cre.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="cre.sousTitre"></div>
+              <div class="detail" data-t="cre.detail"></div>
+            </div>
+            <div class="pousse">
+              <select id="choix-creatures">
+                <option value="miroir" data-t="cre.miroir"></option>
+                <option value="annonce" data-t="cre.annonce"></option>
+                <option value="rien" data-t="cre.rien"></option>
+              </select>
+            </div>
+          </div>
+          <div class="ligne">
+            <div class="detail note" data-t="cre.note"></div>
+          </div>
+        </div>
+
         <h2 data-t="ident.titre"></h2>
         <div class="carte">
           <div class="ligne">
