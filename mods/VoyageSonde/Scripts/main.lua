@@ -190,6 +190,140 @@ local function sonder()
     if compteF == 0 then noter("  (aucune reperee)") end
 
     --[[
+      ⚠️ DEUX QUESTIONS OUVERTES, ET ON ARRETE DE LES DEVINER.
+
+      1. LES ANIMATIONS. Les joueurs distants apparaissent deja comme de vrais
+         pions de la classe du joueur : ils PORTENT donc le blueprint
+         d'animation du jeu. S'ils glissent sans bouger les jambes, ce n'est
+         pas qu'il manque une animation a repliquer -- c'est que
+         `K2_TeleportTo` pose la position sans toucher a la vitesse, et qu'un
+         blueprint d'animation lit la vitesse. Si on peut ecrire
+         `CharacterMovement.Velocity`, les jambes partent toutes seules et il
+         n'y a RIEN a repliquer de plus que ce qu'on envoie deja.
+
+      2. LES NOMS AU-DESSUS DES TETES. Le seul texte qu'UE4SS sait afficher
+         est `PrintString`, dans un coin de l'ecran. Un vrai panneau dans le
+         monde demande `TextRenderComponent` ou `WidgetComponent`. Savoir
+         lesquelles de ces classes existent decide entre « vrai nameplate » et
+         « repli ».
+    ]]
+    --[[
+      RECONNAISSANCE DES PNJ ET DES OBJETS ACTIONNABLES (pour la 0.6.3).
+
+      ATTENTION : ON NE REPLIQUERA PAS CE QU ON N A PAS IDENTIFIE. Synchroniser
+      un monstre demande de savoir quelle classe il porte, ou il est, et ce qui
+      marque sa mort. On liste donc ce qui existe VRAIMENT dans la partie
+      chargee, au lieu de deviner des noms.
+
+      ATTENTION : ON COMPTE PAR CLASSE, ON NE LISTE PAS CHAQUE ACTEUR. Un monde
+      charge contient des dizaines de milliers d acteurs ; ce qui nous interesse
+      c est la liste des classes et combien il y en a de chaque.
+    ]]
+    noter("")
+    noter("--- Creatures et objets actionnables reperes ---")
+
+    local familles = {
+        pnj = { "character", "enemy", "monster", "creature", "ai", "npc", "zombie", "drone", "bot" },
+        actionnable = { "door", "switch", "lever", "valve", "button", "terminal", "station",
+                        "machine", "generator", "container", "storage", "interact" },
+    }
+
+    local comptes, classes = {}, {}
+    local tousLesActeurs = sur(function() return FindAllOf("Actor") end, {}) or {}
+    noter("  acteurs parcourus : " .. tostring(#tousLesActeurs))
+
+    for _, a in ipairs(tousLesActeurs) do
+        local nomC = sur(function() return a:GetClass():GetFName():ToString() end, nil)
+        if nomC then
+            local bas = nomC:lower()
+            for famille, mots in pairs(familles) do
+                for _, mot in ipairs(mots) do
+                    if bas:find(mot, 1, true) then
+                        local cle = famille .. "|" .. nomC
+                        comptes[cle] = (comptes[cle] or 0) + 1
+                        classes[cle] = a
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    local listees = 0
+    for cle, combien in pairs(comptes) do
+        if listees >= 30 then break end
+        listees = listees + 1
+        local famille, nomC = cle:match("^(%a+)|(.+)$")
+        noter(string.format("  [%s] %-44s x%d", famille, nomC, combien))
+        local exemple = classes[cle]
+        if exemple and listees <= 6 then
+            noter("      heritage : " .. hierarchie(exemple))
+            noter("      position : " .. vecteur(sur(function() return exemple:K2_GetActorLocation() end, nil)))
+        end
+    end
+    if listees == 0 then noter("  (aucune classe reconnue -- il faudra elargir les mots-cles)") end
+
+    noter("")
+    noter("--- Animations : la vitesse est-elle accessible ? ---")
+
+    local vit = sur(function() return pion:GetVelocity() end, nil)
+    noter("  GetVelocity()            : " .. (vit and vecteur(vit) or "INDISPONIBLE"))
+
+    local mouvement = sur(function() return pion.CharacterMovement end, nil)
+    if not estValide(mouvement) then
+        mouvement = sur(function() return pion.MovementComponent end, nil)
+    end
+    if estValide(mouvement) then
+        noter("  composant de mouvement   : " .. nomComplet(mouvement))
+        noter("    heritage               : " .. hierarchie(mouvement))
+        local v = sur(function() return mouvement.Velocity end, nil)
+        noter("    .Velocity (lecture)    : " .. (v and vecteur(v) or "INDISPONIBLE"))
+        -- Ecriture : on repose la valeur lue, donc rien ne bouge pour le joueur.
+        local ecrivable = false
+        if v then
+            ecrivable = sur(function()
+                mouvement.Velocity = { X = v.X, Y = v.Y, Z = v.Z }
+                return true
+            end, false)
+        end
+        noter("    .Velocity (ecriture)   : " .. (ecrivable and "POSSIBLE" or "refusee"))
+        noter("    MaxWalkSpeed           : " .. tostring(sur(function() return mouvement.MaxWalkSpeed end, "indisponible")))
+    else
+        noter("  composant de mouvement   : INTROUVABLE")
+    end
+
+    local maille = sur(function() return pion.Mesh end, nil)
+    if not estValide(maille) then maille = sur(function() return pion:GetMesh() end, nil) end
+    if estValide(maille) then
+        noter("  maille (Mesh)            : " .. nomComplet(maille))
+        local anim = sur(function() return maille.AnimScriptInstance end, nil)
+        noter("    AnimScriptInstance     : " .. (estValide(anim) and nomComplet(anim) or "INDISPONIBLE"))
+    else
+        noter("  maille (Mesh)            : INTROUVABLE")
+    end
+
+    noter("")
+    noter("--- Noms au-dessus des tetes : quelles classes existent ? ---")
+
+    local candidates = {
+        { "TextRenderComponent", "/Script/Engine.TextRenderComponent" },
+        { "WidgetComponent",     "/Script/UMG.WidgetComponent" },
+        { "UserWidget",          "/Script/UMG.UserWidget" },
+        { "TextBlock",           "/Script/UMG.TextBlock" },
+        { "HUD",                 "/Script/Engine.HUD" },
+        { "CanvasPanel",         "/Script/UMG.CanvasPanel" },
+    }
+    for _, c in ipairs(candidates) do
+        local trouvee = sur(function() return StaticFindObject(c[2]) end, nil)
+        noter(string.format("  %-22s : %s", c[1], estValide(trouvee) and "PRESENTE" or "absente"))
+    end
+
+    -- Un HUD vivant permettrait de dessiner sans rien instancier.
+    local hud = sur(function() return FindFirstOf("HUD") end, nil)
+    noter("  HUD actif en jeu       : " .. (estValide(hud) and nomComplet(hud) or "aucun"))
+    if estValide(hud) then noter("    heritage             : " .. hierarchie(hud)) end
+
+    --[[
       ⚠️ CONNAITRE LE NOM D'UNE FONCTION NE SUFFIT PAS POUR L'APPELER. Il
          faut ses parametres, dans l'ordre, avec leur type : un appel avec
          le mauvais nombre d'arguments passe par-dessus la pile d'Unreal et

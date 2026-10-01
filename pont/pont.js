@@ -115,6 +115,32 @@ const M = (cle, ...a) => MOTS[langue][cle](...a)
   ⚠️ LA PREMIERE LIGNE ANNONCE LE NOMBRE DE JOUEURS. C'est la ceinture du
      mod : si le compte ne tombe pas juste, il jette la lecture.
 */
+const FICHIER_MESSAGE = path.join(os.tmpdir(), 'voyage-message.txt')
+
+/*
+  ⚠️ LE MOD LISAIT CE FICHIER, PERSONNE NE L'ECRIVAIT. `lireMessages()` du cote
+     jeu attend `<ton> <texte>` dans `voyage-message.txt` depuis le debut et
+     l'affiche a l'ecran -- mais aucune ligne du pont ne le creait. Le chat
+     partait donc du serveur, arrivait jusqu'ici, et mourait dans le journal du
+     lanceur sans jamais atteindre le joueur.
+
+  ⚠️ ON ECRIT A COTE PUIS ON RENOMME. Le mod lit ce fichier dix fois par
+     seconde : l'ecrire en place lui donnerait, tot ou tard, une ligne coupee
+     en deux.
+*/
+function afficherDansLeJeu(ton, texte) {
+  if (!texte) return
+  const propre = String(texte).replace(/[\r\n]+/g, ' ').trim()
+  if (!propre) return
+  try {
+    const abri = `${FICHIER_MESSAGE}.tmp`
+    fs.writeFileSync(abri, `${ton} ${propre}`, 'utf8')
+    fs.renameSync(abri, FICHIER_MESSAGE)
+  } catch {
+    // Un message perdu ne doit jamais interrompre la partie.
+  }
+}
+
 const FICHIER_AUTRES = path.join(os.tmpdir(), 'voyage-autres.txt')
 const PERIODE_DEPOT = 100
 
@@ -125,7 +151,14 @@ function deposerLesAutres(tick) {
   if (maintenant - dernierDepot < PERIODE_DEPOT) return
   dernierDepot = maintenant
 
-  const lignes = [`v1 ${tick || 0} ${autresJoueurs.length}`]
+  /*
+    ⚠️ LE MARQUEUR DE FORMAT PASSE A `v2` PARCE QUE LA LIGNE A CHANGE. La
+       vitesse s'insere AVANT le nom -- le nom reste en dernier, c'est le seul
+       champ qui peut contenir des espaces. Un mod `v1` lirait « vx vy vz nom »
+       comme un seul nom : le marqueur lui permet de refuser proprement plutot
+       que d'afficher des nombres au-dessus des tetes.
+  */
+  const lignes = [`v2 ${tick || 0} ${autresJoueurs.length}`]
   if (rendezVous && rendezVous.pos) {
     const r = rendezVous
     lignes.push(
@@ -137,11 +170,14 @@ function deposerLesAutres(tick) {
   for (const j of autresJoueurs) {
     const p = j.pos || {}
     const r = j.rot || {}
+    const v = j.vit || {}
     // Le nom vient en dernier : c'est le seul champ qui peut contenir des espaces.
     const nom = String(j.nom || j.id).replace(/[\r\n]/g, ' ')
     lignes.push(
       `j ${j.id} ${Number(p.x || 0).toFixed(2)} ${Number(p.y || 0).toFixed(2)} ` +
-        `${Number(p.z || 0).toFixed(2)} ${Number(r.y || 0).toFixed(2)} ${nom}`,
+        `${Number(p.z || 0).toFixed(2)} ${Number(r.y || 0).toFixed(2)} ` +
+        `${Number(v.x || 0).toFixed(1)} ${Number(v.y || 0).toFixed(1)} ` +
+        `${Number(v.z || 0).toFixed(1)} ${nom}`,
     )
   }
 
@@ -224,10 +260,12 @@ socket.on('message', (tampon) => {
 
     case 'chat':
       log(`<${m.de}> ${m.texte}`)
+      afficherDansLeJeu('info', `${m.de} : ${m.texte}`)
       break
 
     case 'systeme':
       log(`[serveur] ${m.texte}`)
+      afficherDansLeJeu('bon', m.texte)
       break
 
     case 'depart':
@@ -298,12 +336,25 @@ function ligneDuJeu(ligne) {
   if (n.slice(0, 3).some((v) => !Number.isFinite(v))) return
 
   seq++
-  envoyer({
+  const etat = {
     t: 'etat',
     pos: { x: n[0], y: n[1], z: n[2] },
     rot: { x: n[3] || 0, y: n[4] || 0, z: n[5] || 0 },
     seq,
-  })
+  }
+
+  /*
+    ⚠️ LA VITESSE N'EST JOINTE QUE SI LE MOD L'ENVOIE. C'est elle qui fait
+       marcher les jambes des joueurs distants : leur pion porte le blueprint
+       d'animation du jeu, et ce blueprint lit la vitesse. Mais un mod plus
+       ancien n'envoie que six nombres, et il doit continuer a fonctionner --
+       quitte a ce que les autres glissent comme avant.
+  */
+  if (n.length >= 9 && n.slice(6, 9).every((v) => Number.isFinite(v))) {
+    etat.vit = { x: n[6], y: n[7], z: n[8] }
+  }
+
+  envoyer(etat)
 }
 
 const serveurTube = net.createServer((flux) => {

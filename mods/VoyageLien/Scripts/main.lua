@@ -237,6 +237,25 @@ local function faireApparaitre(x, y, z)
     return acteur
 end
 
+--[[
+  Pose la vitesse sur le composant de mouvement du pion distant.
+
+  ATTENTION : C EST CA QUI ANIME, PAS UNE ANIMATION REPLIQUEE. Le pion distant
+  porte le blueprint d animation du jeu ; ce blueprint choisit marche, course
+  ou repos d apres la vitesse du composant de mouvement. `K2_TeleportTo` pose
+  la position sans y toucher, d ou des joueurs qui glissent immobiles.
+
+  ATTENTION : TOUT EST EN pcall ET RIEN N EN DEPEND. Si ce jeu n expose pas
+  `CharacterMovement`, on perd l animation, pas la partie.
+]]
+local function animer(acteur, vx, vy, vz)
+    pcall(function()
+        local m = acteur.CharacterMovement
+        if m == nil then m = acteur.MovementComponent end
+        if m ~= nil then m.Velocity = { X = vx or 0, Y = vy or 0, Z = vz or 0 } end
+    end)
+end
+
 local function deplacer(acteur, x, y, z, yaw)
     -- `K2_TeleportTo` pose position ET orientation d'un coup.
     local ok = pcall(function()
@@ -265,7 +284,9 @@ local function lireAutres()
 
     local attendus, joueurs, vus = nil, {}, 0
     for ligne in contenu:gmatch("[^\r\n]+") do
-        local n = ligne:match("^v1%s+%d+%s+(%d+)")
+        -- `v2` ajoute la vitesse avant le nom. On accepte encore `v1` : un pont
+            -- plus ancien doit continuer a fonctionner, sans animation.
+            local n = ligne:match("^v[12]%s+%d+%s+(%d+)")
         local rx, ry, rz, ryaw, rqui = ligne:match("^rdv%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.*)$")
         if n then
             attendus = tonumber(n)
@@ -276,11 +297,24 @@ local function lireAutres()
                 yaw = tonumber(ryaw) or 0, parQui = rqui or "?",
             }
         else
-            local id, x, y, z, yaw, nom = ligne:match("^j%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.*)$")
+            --[[
+              ATTENTION : ON ESSAIE `v2` D ABORD, PUIS `v1`. Le nom reste en
+              dernier parce que c est le seul champ qui peut contenir des
+              espaces ; la vitesse s insere donc AVANT lui. Lire une ligne v2
+              avec le motif v1 donnerait « vx vy vz nom » comme nom.
+            ]]
+            local id, x, y, z, yaw, vx, vy, vz, nom = ligne:match(
+                "^j%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.*)$")
+            if not (id and tonumber(x) and tonumber(vx)) then
+                id, x, y, z, yaw, nom = ligne:match(
+                    "^j%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.*)$")
+                vx, vy, vz = 0, 0, 0
+            end
             if id and tonumber(x) then
                 joueurs[id] = {
                     x = tonumber(x), y = tonumber(y), z = tonumber(z),
                     yaw = tonumber(yaw) or 0, nom = nom or id,
+                    vx = tonumber(vx) or 0, vy = tonumber(vy) or 0, vz = tonumber(vz) or 0,
                 }
                 vus = vus + 1
             end
@@ -330,6 +364,7 @@ local function suivreLesAutres()
             f.z = f.z + (j.z - f.z) * LISSAGE
             f.nom = j.nom
             deplacer(f.acteur, f.x, f.y, f.z, j.yaw)
+            animer(f.acteur, j.vx, j.vy, j.vz)
         end
     end
 
@@ -568,10 +603,14 @@ local function battement()
     local rot = sur(function() return pion:K2_GetActorRotation() end, nil)
     if pos then
         annoncer("en partie : " .. nomClasse(pion) .. " — envoi en cours.")
+        -- La vitesse fait marcher les jambes des autres : leur pion lit
+        -- la velocite pour choisir son animation.
+        local vit = sur(function() return pion:GetVelocity() end, nil)
         local ligne = string.format(
-            "pos %.2f %.2f %.2f %.2f %.2f %.2f\n",
+            "pos %.2f %.2f %.2f %.2f %.2f %.2f %.1f %.1f %.1f\n",
             pos.X or 0, pos.Y or 0, pos.Z or 0,
-            rot and rot.Pitch or 0, rot and rot.Yaw or 0, rot and rot.Roll or 0
+            rot and rot.Pitch or 0, rot and rot.Yaw or 0, rot and rot.Roll or 0,
+            vit and vit.X or 0, vit and vit.Y or 0, vit and vit.Z or 0
         )
         local ok = pcall(function() sortie:write(ligne) end)
         if ok then

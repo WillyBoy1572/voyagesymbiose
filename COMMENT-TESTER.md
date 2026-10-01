@@ -2,7 +2,7 @@
 
 ## 1. Installer
 
-Un seul fichier : **`Voyage-Lanceur-0.6.1-installeur.exe`** (84 Mo).
+Un seul fichier : **`Voyage-Lanceur-0.6.2-installeur.exe`** (84 Mo).
 Il pose le lanceur, un raccourci bureau et un raccourci menu Démarrer.
 
 Windows affichera « Éditeur inconnu » : l'exécutable n'est pas signé. Pour le
