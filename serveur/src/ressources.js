@@ -22,13 +22,24 @@ const vm = require('node:vm')
  *     JavaScript. Le mod DANS LE JEU, lui, est bien en Lua : c'est la que le
  *     Lua est impose, et c'est la qu'il est.
  *
- *  ⚠️ L'ISOLATION PORTE SUR CE QU'ON PEUT ATTEINDRE, PAS SUR LE TEMPS PASSE.
- *     La ressource n'a ni `require`, ni `process`, ni acces au disque : elle ne
- *     peut pas lire les mots de passe du serveur ni ouvrir une connexion. Mais
- *     elle tourne dans le meme processus : une boucle infinie dans une
- *     ressource arrete le serveur. Ce n'est pas un bac a sable de securite
- *     contre du code hostile, c'est une surface d'API etroite contre les
- *     accidents. Je le dis parce que croire le contraire serait dangereux.
+ *  ⚠️ CE N'EST PAS UN BAC A SABLE DE SECURITE. `node:vm` n'en est pas un, et il
+ *     faut le dire sans detour : une ressource atteint `process` en une ligne,
+ *     par le constructeur de n'importe quelle fonction qu'on lui a passee --
+ *     `sur.constructor('return process')()`. De la, elle lit l'environnement et
+ *     ouvre des fichiers. Essaye, c'est trois lignes.
+ *
+ *     Ce que l'API etroite apporte, c'est une protection contre les ACCIDENTS :
+ *     une ressource qui se trompe ne casse pas la partie, et une erreur la
+ *     desactive au lieu de tuer le serveur. Contre du code HOSTILE, elle
+ *     n'apporte rien. Une ressource est aussi digne de confiance que le serveur
+ *     lui-meme : installer celle d'un inconnu, c'est lui donner la machine.
+ *
+ *     Mesure prise en consequence : `server.js` efface les secrets de
+ *     `process.env` une fois la configuration lue, pour qu'une ressource ne les
+ *     y trouve plus. Ca ne rend pas l'isolation vraie, ca retire juste le butin
+ *     le plus evident.
+ *
+ *  ⚠️ ELLE TOURNE DANS LE MEME PROCESSUS : une boucle infinie arrete tout.
  *
  *  ⚠️ UNE RESSOURCE QUI PLANTE NE TUE PAS LA PARTIE. Chaque appel est
  *     enveloppe ; une erreur desactive la ressource et l'ecrit dans la
@@ -239,7 +250,8 @@ class Ressources {
 
   /**
    * Ce qu'une ressource peut toucher. Tout le reste est absent du contexte :
-   * pas de `require`, pas de `process`, pas de `fs`, pas de `fetch`.
+   * pas de `require`, pas de `fs`, pas de `fetch` -- mais voir l'avertissement
+   * en tete de fichier : ce n'est pas une barriere de securite.
    */
   #bacASable(r) {
     const ctx = this.contexte

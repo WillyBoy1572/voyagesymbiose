@@ -114,11 +114,14 @@ function cibleComplete() {
      vient de le taper pour se connecter ; le redemander a chaque action
      lancee depuis le jeu serait absurde. Il part avec le processus.
 */
-/**
- * L'alphabet des billets, copie de `src/rendezvous.js` cote serveur : ni 0/O
- * ni 1/l, pour qu'un billet se lise au telephone sans se tromper.
- */
-const ALPHABET_BILLET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+/*
+  ⚠️ UN SEUL ALPHABET, CELUI DU SERVEUR. Il etait recopie ici ; deux copies
+     d'une meme regle, c'est une regle changee d'un cote et pas de l'autre, et
+     un billet valide refuse sans que personne comprenne. Le serveur est
+     embarque dans le lanceur : on lit le sien.
+*/
+const { ALPHABET: ALPHABET_BILLET } = require('../serveur/src/rendezvous')
 
 /**
  * Vrai si ce texte est un billet de rendez-vous et pas une adresse.

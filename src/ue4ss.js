@@ -102,11 +102,6 @@ function racineUe4ss(depart, profondeur = 0) {
   return null
 }
 
-/** Ce que le lanceur embarque, pour l'afficher sans rien ouvrir. */
-function archiveLivree() {
-  const chemin = cheminArchive()
-  return { nom: ARCHIVE, version: VERSION, present: Boolean(chemin), chemin }
-}
 
 /**
  * Prépare UE4SS dans un dossier de travail et rend son emplacement.
@@ -139,10 +134,13 @@ async function preparer(dossierTravail, surAvancement = () => {}) {
 }
 
 module.exports = {
-  preparer,
   // Le nom d'origine reste exposé : l'interface et le processus principal
   // l'appellent déjà, et pour eux rien ne change.
+  /*
+    ⚠️ UN SEUL NOM. La fonction s'appelait `preparer` et etait exportee DEUX
+       fois, sous `preparer` et sous `telecharger`. Deux noms pour une chose,
+       c'est deux endroits a changer et un a oublier.
+  */
   telecharger: preparer,
-  archiveLivree,
   dossierTemporaire: () => path.join(os.tmpdir(), 'voyage-lanceur'),
 }

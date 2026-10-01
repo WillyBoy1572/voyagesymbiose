@@ -89,10 +89,6 @@ function serveursConfigures() {
   })
 }
 
-function aUneCle(hote, port) {
-  return Boolean(cles[cle(hote, port)])
-}
-
 /**
  * Appelle une route d'administration.
  *
@@ -111,6 +107,13 @@ async function appeler(hote, port, chemin, options = {}) {
       ...options,
       headers: { 'X-Admin-Cle': k, 'Content-Type': 'application/json', ...(options.headers || {}) },
       signal: AbortSignal.timeout(DELAI_MS),
+      /*
+        ⚠️ ON NE SUIT PAS UNE REDIRECTION AVEC UNE CLÉ DANS LES MAINS. `fetch`
+           les suit par défaut et rejoue les mêmes en-têtes au saut suivant : un
+           serveur qui répond `302 → http://chez-moi/` recevrait la clé
+           d'administration du joueur. Un vrai serveur Voyage ne redirige jamais.
+      */
+      redirect: 'error',
     })
     if (r.status === 404) return { ok: false, cle: 'err.adminRefuse' }
     if (!r.ok) return { ok: false, cle: 'err.adminHttp', valeurs: { code: r.status } }
@@ -160,7 +163,6 @@ async function annoncer(hote, port, texte) {
 module.exports = {
   poserContexte,
   poserCle,
-  aUneCle,
   serveursConfigures,
   etat,
   joueurs,

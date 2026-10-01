@@ -53,7 +53,19 @@ const monde = new Monde()
 const entites = new Entites(config, dire)
 const identites = new Identites(config, dire)
 const permissions = new Permissions(config, identites)
-const moderation = new Moderation(config, dire)
+/*
+  ⚠️ LA MODERATION A BESOIN DE SAVOIR SI UNE ADRESSE EST PARTAGEE, et seule
+     la session le sait. On lui passe la question, pas la table : elle n'a
+     aucune raison de pouvoir lire les joueurs.
+*/
+const moderation = new Moderation(config, dire, (adresse) => {
+  if (!adresse) return false
+  let vus = 0
+  for (const j of session.joueurs.values()) {
+    if (j.adresse === adresse && ++vus > 1) return true
+  }
+  return false
+})
 const equipes = new Equipes()
 const activites = new Activites(dire)
 const inventaires = new Inventaires(config, dire)
@@ -144,6 +156,20 @@ const annuaire = new Annuaire(
   dire,
 )
 
+/*
+  ⚠️ LES SECRETS QUITTENT `process.env` UNE FOIS LUS. La configuration est
+     figée au démarrage : plus personne n'a besoin d'y revenir. En revanche
+     une ressource ajoutée dans `ressources/` y accède en une ligne (voir
+     l'avertissement en tête de `ressources.js` : `node:vm` n'est pas un bac à
+     sable). Les effacer ne rend pas l'isolation vraie — ça retire le butin.
+
+     ⚠️ ON N'EFFACE PAS CE QUI SERT ENCORE. `DONNEES`, `PORT` et le reste
+        sont relus nulle part, mais on ne touche qu'à ce qui est un secret.
+*/
+for (const nom of ['ADMIN_CLE', 'SERVER_PASSWORD', 'MONDE_MOTDEPASSE', 'ANNUAIRE_CLE']) {
+  if (process.env[nom] !== undefined) delete process.env[nom]
+}
+
 // ── Reception ───────────────────────────────────────────────────────────────
 
 socket.on('message', (tampon, info) => {
@@ -155,16 +181,54 @@ socket.on('message', (tampon, info) => {
   }
 })
 
+/*
+  ⚠️ LA SEULE VOIE NON AUTHENTIFIEE EST AUSSI LA PLUS CHERE. Un `bonjour`
+     declenche une verification de signature ed25519 ; un `rdv-` fait repondre.
+     Les deux arrivent sans jeton, depuis une adresse qu'on ne peut pas croire.
+     Sans plafond, quelques milliers de paquets par seconde occupent le serveur
+     a verifier des signatures inventees pendant que la partie s'arrete.
+
+     Le plafond est par adresse et large : un joueur honnete envoie UN bonjour.
+*/
+const PAQUETS_LIBRES_PAR_SECONDE = 10
+const compteursLibres = new Map()
+
+function tropDeLibres(adresse) {
+  const maintenant = Date.now()
+  let c = compteursLibres.get(adresse)
+  if (!c || maintenant - c.debut >= 1000) {
+    c = { debut: maintenant, n: 0 }
+    compteursLibres.set(adresse, c)
+  }
+  c.n++
+  return c.n > PAQUETS_LIBRES_PAR_SECONDE
+}
+
+/* Sans ce menage, la table grossit d'une entree par adresse vue, pour toujours. */
+setInterval(() => {
+  const limite = Date.now() - 5000
+  for (const [a, c] of compteursLibres) if (c.debut < limite) compteursLibres.delete(a)
+}, 10_000).unref?.()
+
 function traiter(tampon, adresse, port) {
   const brut = decoder(tampon)
   if (!brut) return mesures.refuse()
+
+  const sansJeton =
+    (typeof brut.t === 'string' && brut.t.startsWith('rdv-')) || brut.t === 'bonjour'
+  if (sansJeton && tropDeLibres(adresse)) return mesures.refuse()
 
   /*
     ⚠️ LES MESSAGES DE RENDEZ-VOUS PASSENT AVANT LA SESSION, PAR DEFINITION. Ils
        servent a se trouver AVANT d'avoir la moindre session : leur demander un
        jeton n'aurait aucun sens. En echange ils ne lisent aucun etat de partie,
-       ne modifient rien, et ne repondent qu'a l'adresse qui a ecrit — donc
-       aucune amplification possible.
+       ne modifient rien, et ne lisent aucun etat de partie.
+
+       ⚠️ CE N'EST PAS « AUCUNE AMPLIFICATION », et l'ecrire serait faux :
+          `rdv-joindre` fait envoyer un `rdv-perce` A L'HOTE, donc a un tiers.
+          Un paquet pour un paquet, et seulement vers une adresse qui s'est
+          elle-meme annoncee ici -- mais ce n'est pas zero, et le plafond
+          par source ci-dessous est ce qui le borne.
   */
   if (typeof brut.t === 'string' && brut.t.startsWith('rdv-')) {
     if (percage.traiter(brut, adresse, port)) return
@@ -444,6 +508,15 @@ function chat(joueur, message) {
     return
   }
   if (moderation) {
+    /*
+      ⚠️ DEUX SORTES DE MUSELLEMENT. Celui qui est inscrit, et celui qui ne tient
+         que le temps de la connexion — le seul possible quand il n'y a ni
+         identité ni adresse propre à épingler.
+    */
+    if (joueur.muselJusqua && joueur.muselJusqua > Date.now()) {
+      session.messageA(joueur, 'Tu ne peux pas parler pour le moment.')
+      return
+    }
     const musele = moderation.musele(joueur.empreinte, joueur.adresse)
     if (musele) {
       session.messageA(joueur, 'Tu ne peux pas parler pour le moment.')

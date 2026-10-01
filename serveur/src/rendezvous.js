@@ -28,8 +28,15 @@ const crypto = require('node:crypto')
  *  ⚠️ CA NE MARCHE PAS PARTOUT, ET IL FAUT LE DIRE. Un NAT dit « symetrique »
  *     donne un port public DIFFERENT par destination : l'adresse apprise au
  *     rendez-vous ne vaut alors rien pour le client. C'est le cas d'une partie
- *     des reseaux mobiles et de quelques fournisseurs. Pour ceux-la il faut un
- *     relais, et ce module sait aussi en faire un.
+ *     des reseaux mobiles et de quelques fournisseurs. Pour ceux-la il faudrait
+ *     un relais.
+ *
+ *  ⚠️ LE RELAIS N'EXISTE PAS ENCORE. Ce fichier en porte l'etat (`this.relais`,
+ *     `relayes`, `RELAIS_OCTETS_PAR_SECONDE`) et le `rapport()` le compte, mais
+ *     `traiter()` n'a AUCUN cas `rdv-relais` : un cote qui le demanderait
+ *     n'aurait jamais de reponse. L'entete disait le contraire -- c'est corrige.
+ *     Tant qu'il n'est pas ecrit, un NAT symetrique se solde par un refus
+ *     explicite, pas par un silence.
  *
  *  ⚠️ LE RENDEZ-VOUS NE VOIT JAMAIS DE PARTIE. Il ne transporte que des
  *     adresses et un billet ; le relais, lui, transporte des octets qu'il ne
@@ -96,7 +103,7 @@ function cleEndroit(adresse, port) {
  * Il repond a quatre messages, tous distincts de ceux du jeu :
  *   `rdv-heberge`  un hote s'annonce et garde son trou ouvert
  *   `rdv-joindre`  un client demande l'adresse d'un hote
- *   `rdv-relais`   les deux cotes renoncent au direct et passent par ici
+ *   (`rdv-relais` est prevu, pas ecrit : voir l'avertissement en tete)
  *   `rdv-ping`     de quoi mesurer et garder le trou ouvert
  */
 class RendezVous {

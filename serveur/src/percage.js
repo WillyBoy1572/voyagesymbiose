@@ -214,7 +214,13 @@ class Percage {
   #noterEndroit(vu) {
     if (!vu || typeof vu.adresse !== 'string' || !Number.isInteger(vu.port)) return
     this.vu = vu
-    this.portsVus.add(vu.port)
+    /*
+      ⚠️ ON ARRETE DE COLLECTIONNER UNE FOIS LE VERDICT RENDU. Sur un NAT
+         symetrique, le port change a CHAQUE battement : l'ensemble gagnait une
+         entree toutes les vingt secondes, pour toujours, alors que trois
+         suffisent a conclure.
+    */
+    if (!this.symetrique) this.portsVus.add(vu.port)
 
     /*
       ⚠️ PLUSIEURS PORTS PUBLICS = NAT SYMETRIQUE = PERCAGE IMPOSSIBLE. Le dire

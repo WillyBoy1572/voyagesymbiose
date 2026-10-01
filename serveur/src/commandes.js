@@ -574,7 +574,23 @@ const COMMANDES = {
         { empreinte: cible.empreinte, adresse: cible.adresse, nom: cible.nom },
         { raison: args.slice(2).join(' '), par: joueur.nom, dureeMs: dureeMs || 0 },
       )
-      if (!s) return 'Impossible : ni identité ni adresse à viser.'
+      /*
+        ⚠️ SANS IDENTITÉ ET DERRIÈRE UNE ADRESSE PARTAGÉE, IL N'Y A RIEN À ÉPINGLER
+           QUI DURE — mais il y a quand même quelqu'un qui parle maintenant. On
+           muselè la SESSION : ça marche tout de suite, ça ne touche personne
+           d'autre, et ça ne survit pas à sa déconnexion. On le dit, parce qu'une
+           sanction qu'on croit permanente et qui ne l'est pas est pire qu'un
+           refus.
+      */
+      if (!s) {
+        cible.muselJusqua = dureeMs > 0 ? Date.now() + dureeMs : Number.MAX_SAFE_INTEGER
+        session.messageA(cible, `Tu ne peux plus parler (${decrireDuree(dureeMs || 0)}).`)
+        return (
+          `${cible.nom} ne peut plus parler — ${decrireDuree(dureeMs || 0)}. ` +
+          'Sans identité signée et derrière une adresse partagée, ça ne tient que ' +
+          'le temps de sa connexion : rien ne permet de le reconnaître au retour.'
+        )
+      }
       session.messageA(cible, `Tu ne peux plus parler (${decrireDuree(dureeMs || 0)}).`)
       return `${cible.nom} ne peut plus parler — ${decrireDuree(dureeMs || 0)}.`
     },
@@ -586,6 +602,9 @@ const COMMANDES = {
     faire(session, joueur, args) {
       if (!session.moderation) return 'La modération n’est pas disponible sur ce serveur.'
       if (args.length === 0) return 'Donne un nom ou une empreinte.'
+      // On lève aussi un musellement de session, qui n'est inscrit nulle part.
+      const vise = trouverJoueur(session, args.join(' '))
+      if (vise && vise.muselJusqua) vise.muselJusqua = 0
       const n = session.moderation.lever('museler', args.join(' '))
       return n ? `${n} silence(s) levé(s).` : 'Rien ne correspond.'
     },

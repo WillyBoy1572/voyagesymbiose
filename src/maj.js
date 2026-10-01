@@ -69,7 +69,7 @@ function comparerVersions(a, b) {
  */
 async function verifierLanceur(versionLocale) {
   try {
-    const r = await fetch(SOURCE, { signal: AbortSignal.timeout(DELAI_MS) })
+    const r = await fetch(SOURCE, { signal: AbortSignal.timeout(DELAI_MS), redirect: 'error' })
     if (!r.ok) return { aJour: null, raison: `HTTP ${r.status}` }
     const liste = await r.json()
     if (!Array.isArray(liste)) return { aJour: null, raison: 'réponse illisible' }

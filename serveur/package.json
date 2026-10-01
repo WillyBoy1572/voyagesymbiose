@@ -1,6 +1,6 @@
 {
   "name": "symbiose-voyage",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "description": "Serveur cooperatif autoritaire pour The Last Caretaker. Aucune dependance : uniquement la bibliotheque standard de Node.",
   "license": "UNLICENSED",
@@ -11,7 +11,7 @@
   },
   "scripts": {
     "start": "node src/server.js",
-    "essai": "node essais/entites.js && node essais/monde.js && node essais/tout.js && node essais/cadre.js && node essais/chaine.js && node essais/percage.js",
+    "essai": "node essais/entites.js && node essais/monde.js && node essais/tout.js && node essais/cadre.js && node essais/chaine.js && node essais/percage.js && node essais/moderation.js",
     "essai-mod": "py essais/mod.py"
   }
 }

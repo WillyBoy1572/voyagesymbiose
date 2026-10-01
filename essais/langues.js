@@ -117,5 +117,29 @@ ok(T('nav.serveurs') === 'Serveurs', 'et on peut revenir au français', T('nav.s
   )
 }
 
+/*
+  ⚠️ UNE CLE QUE PLUS PERSONNE N'APPELLE RESTE TRADUITE EN TROIS LANGUES, et
+     fait croire a une fonctionnalite qui n'existe plus. Huit traînaient : des
+     restes de versions où le billet se copiait à la main. Le banc du site le
+     vérifiait déjà ; celui du lanceur, non.
+*/
+{
+  const sources = ['ui/app.js', 'ui/index.html', ...fs
+    .readdirSync(path.join(RACINE, 'src'))
+    .filter((f) => f.endsWith('.js'))
+    .map((f) => path.join('src', f))]
+  const corpus = sources
+    .map((f) => { try { return fs.readFileSync(path.join(RACINE, f), 'utf8') } catch { return '' } })
+    .join('\n')
+  const orphelines = Object.keys(LANGUES_TEXTES.fr).filter(
+    (c) => !corpus.includes(`'${c}'`) && !corpus.includes(`"${c}"`),
+  )
+  ok(
+    orphelines.length === 0,
+    'aucune clé ne traîne sans personne pour l’appeler',
+    orphelines.join(', '),
+  )
+}
+
 console.log('\n' + (echecs ? `${echecs} ÉCHEC(S)` : 'TOUT PASSE'))
 process.exit(echecs ? 1 : 0)

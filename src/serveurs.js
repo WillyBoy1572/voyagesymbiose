@@ -85,6 +85,8 @@ async function interroger(serveur) {
   for (const portInfo of [serveur.port + 1, serveur.port]) {
     try {
       const r = await fetch(`http://${serveur.hote}:${portInfo}/info`, {
+      // Un serveur listé ne redirige pas : s'il le fait, ce n'en est pas un.
+      redirect: 'error',
         signal: AbortSignal.timeout(2500),
       })
       if (!r.ok) continue

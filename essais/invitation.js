@@ -137,10 +137,35 @@ for (const ligne of [
   'X-Admin-Cle: 1234',
   'jeton de reprise : abcdef',
   'SERVER_PASSWORD=truc',
+  /*
+    ⚠️ CES QUATRE-LÀ FUYAIENT POUR DE VRAI. La liste était écrite sur ce qu'on
+       voyait à UN endroit : « admin_cle » n'attrape pas « cleAdmin », et aucun
+       mot anglais n'attrape « mdp ». Vérifié avant correction : les quatre
+       sortaient en clair dans le pack qu'on demande au joueur de nous envoyer.
+  */
+  'cleAdmin: a1b2c3d4e5f6',
+  'mdp du serveur : hunter2',
+  'Authorization: Bearer eyJhbGciOi',
+  'clé = abcdef0123',
+  'api_key=zzz',
+  'sig=deadbeef',
 ]) {
   ok(expurger(ligne).startsWith('[ligne retirée'), `retirée : « ${ligne.slice(0, 30)} »`)
 }
-ok(expurger('connecté à « Voyage Public 1 »') === 'connecté à « Voyage Public 1 »', 'une ligne ordinaire passe')
+
+/*
+  ⚠️ UN PACK QUI RETIRE TOUT NE SERT À RIEN. Le but est d'aider à diagnostiquer :
+     ces lignes-là doivent rester lisibles, sinon personne ne peut rien en faire.
+*/
+for (const ligne of [
+  'connecté à « Voyage Public 1 »',
+  'perçage : billet « VCJUDM93 »',
+  'RENDEZVOUS_ADRESSE = 1.2.3.4:29999',
+  'le jeu a changé de version (build 1234)',
+  '3 joueurs en ligne',
+]) {
+  ok(expurger(ligne) === ligne, `gardée : « ${ligne.slice(0, 30)} »`)
+}
 
 console.log('\n' + '─'.repeat(58))
 console.log(echecs === 0 ? `TOUT PASSE — ${essais} vérifications` : `${echecs} ÉCHEC(S) sur ${essais}`)

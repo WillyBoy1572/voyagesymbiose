@@ -53,9 +53,16 @@ function decrireDuree(ms) {
 }
 
 class Moderation {
-  constructor(config, journal) {
+  /**
+   * @param {object} config
+   * @param {(texte: string) => void} [journal]
+   * @param {(adresse: string) => boolean} [adressePartagee] vrai si plus d'un
+   *   joueur connecté arrive de cette adresse.
+   */
+  constructor(config, journal, adressePartagee) {
     this.config = config
     this.journal = journal || (() => {})
+    this.adressePartagee = adressePartagee || (() => false)
     this.fichier = path.join(config.dossierDonnees, 'moderation.json')
     /** @type {Array<object>} */
     this.sanctions = []
@@ -127,7 +134,21 @@ class Moderation {
     const s = {
       genre,
       empreinte: cible.empreinte || null,
-      adresse: cible.empreinte ? null : cible.adresse || null,
+      /*
+        ⚠️ UNE ADRESSE PARTAGÉE BANNIT TOUT LE MONDE. Nos serveurs hébergés sont
+           joints par un tunnel qui masque la source : ils voient TOUS leurs
+           joueurs arriver de `10.90.0.1`. Bannir à l'adresse y fermerait le
+           serveur à tout le monde sauf à celui qu'on visait, qui reviendrait
+           avec un autre port.
+
+           ⚠️ LE CRITÈRE EST « PARTAGÉE », PAS « PRIVÉE ». Une soirée LAN donne
+              des adresses privées mais DISTINCTES, et bannir l'une d'elles est
+              parfaitement légitime. Ce qu'on refuse, c'est une adresse derrière
+              laquelle se trouve déjà quelqu'un d'autre.
+      */
+      adresse: cible.empreinte || this.adressePartagee(cible.adresse)
+        ? null
+        : cible.adresse || null,
       nom: cible.nom || '?',
       raison: String(raison || '').slice(0, 240),
       par: String(par || '?').slice(0, 24),

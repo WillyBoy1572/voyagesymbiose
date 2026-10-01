@@ -38,6 +38,17 @@ const DOMAINE = 'voyage-identite-v1'
 /** Au-dela, l'horodatage est trop vieux ou vient du futur : on refuse. */
 const FENETRE_MS = 120_000
 
+/**
+ * Au-dela de ce silence, un profil est oublie : il n'apprend plus rien sur
+ * personne et il pese dans le fichier de tout le monde.
+ *
+ * ⚠️ ON NE JETTE PAS UN PROFIL QUI PORTE QUELQUE CHOSE. Un role donne, une
+ *    note ecrite par l'hote : ce sont des decisions, pas des traces de
+ *    passage. Les oublier rendrait son role a quelqu'un qui l'a perdu, ou
+ *    effacerait la raison pour laquelle on le surveillait.
+ */
+const PROFIL_OUBLIE_APRES_MS = 365 * 24 * 60 * 60 * 1000
+
 /** Combien de signatures on retient pour refuser un rejeu. */
 const SIGNATURES_RETENUES = 4096
 
@@ -126,7 +137,12 @@ class Identites {
           notes: typeof p.notes === 'string' ? p.notes.slice(0, 240) : '',
         })
       }
-      this.journal(`${this.profils.size} identité(s) connue(s).`)
+      const oublies = this.#oublierLesAnciens()
+      this.journal(
+        `${this.profils.size} identité(s) connue(s)` +
+          (oublies ? ` (${oublies} oubliée(s), plus vues depuis un an)` : '') +
+          '.',
+      )
     } catch {
       /* premier demarrage : rien a charger */
     }
@@ -223,6 +239,28 @@ class Identites {
   profil(empreinte) {
     if (!empreinte) return null
     return this.profils.get(empreinte) || null
+  }
+
+  /**
+   * Oublie les profils muets depuis trop longtemps. Rend le compte.
+   *
+   * ⚠️ SANS CA, LE FICHIER NE FAIT QUE GROSSIR. Un profil par visiteur, pour
+   *    toujours : sur un serveur public c'est des dizaines de milliers
+   *    d'entrees apres un an, relues et reecrites a chaque demarrage.
+   */
+  #oublierLesAnciens(maintenantMs = Date.now()) {
+    let n = 0
+    for (const [empreinte, p] of this.profils) {
+      // Un role donne ou une note ecrite sont des decisions : on ne les jette pas.
+      if (p.role || (p.notes && String(p.notes).trim())) continue
+      const vu = Number(p.vuLaDerniereFois) || 0
+      if (vu && maintenantMs - vu > PROFIL_OUBLIE_APRES_MS) {
+        this.profils.delete(empreinte)
+        n++
+      }
+    }
+    if (n) this.sale = true
+    return n
   }
 
   /** Cree ou met a jour le profil au moment ou le joueur arrive. */

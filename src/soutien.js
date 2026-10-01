@@ -30,19 +30,52 @@ const path = require('node:path')
 const LIGNES = 150
 
 /** Les mots qui, dans une ligne, la rendent impubliable. */
+/*
+  ⚠️ LA LISTE SE LIT SUR UNE LIGNE MISE EN MINUSCULES, SANS SÉPARATEUR. Elle a
+     déjà laissé passer trois choses, et toutes les trois pour la même raison :
+     on avait écrit le mot tel qu'il apparaissait à UN endroit.
+
+       « admin_cle »  n'attrape pas  « cleAdmin: a1b2c3 »
+       « password »   n'attrape pas  « mdp du serveur : hunter2 »
+       « secret »     n'attrape pas  « Authorization: Bearer eyJ… »
+
+     On couvre donc les deux langues ET les deux écritures. Un mot de trop retire
+     une ligne de journal : ça se remarque, et ça se demande. Un mot de moins
+     publie un secret : ça ne se remarque jamais.
+*/
 const MOTS_SENSIBLES = [
+  // Mots de passe, dans les deux langues et les deux écritures.
   'motdepasse',
   'mot de passe',
+  'mdp',
   'password',
+  'passwd',
+  // Clés d'administration, quel que soit le sens d'écriture.
   'admin_cle',
+  'admincle',
+  'cleadmin',
+  'cléadmin',
   'x-admin-cle',
   'monde_motdepasse',
+  // Tout ce qui autorise une requête.
+  'authorization',
+  'bearer',
+  'apikey',
+  'api_key',
+  'clé =',
+  'cle =',
+  'clé=',
+  'cle=',
+  // Jetons, signatures, clés privées.
   'reprise',
   'privee',
+  'privée',
   'private',
   'secret',
   'jeton',
   'token',
+  'signature',
+  'sig=',
 ]
 
 /**
