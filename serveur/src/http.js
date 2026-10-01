@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 const http = require('node:http')
 const fs = require('node:fs')
 const journal = require('./journal')
@@ -111,10 +120,10 @@ function creerHttp(config, session, monde, sauvegardes, modules = {}) {
              serveur ou n'importe qui remplace le monde de la partie n'est
              pas un serveur.
         */
-        return json(reponse, 403, { erreur: 'publication fermée : MONDE_MOTDEPASSE n’est pas défini' })
+        return json(reponse, 403, { erreur: t('http.publication-fermee-monde-motdepasse-n') })
       }
       if (!sauvegardes.motDePasseValide(requete.headers['x-monde-motdepasse'])) {
-        return json(reponse, 401, { erreur: 'mot de passe du monde refusé' })
+        return json(reponse, 401, { erreur: t('http.mot-de-passe-du-monde') })
       }
 
       try {
@@ -127,7 +136,7 @@ function creerHttp(config, session, monde, sauvegardes, modules = {}) {
           publiePar: url.searchParams.get('par'),
           fichiers: Number.parseInt(url.searchParams.get('fichiers') ?? '', 10),
         })
-        session.annoncer(`Un nouveau monde a été publié : « ${info.nom} ».`)
+        session.annoncer('http.un-nouveau-monde-a-ete', { v1: info.nom })
         return json(reponse, 200, info)
       } catch (e) {
         return json(reponse, 400, { erreur: e.message })
@@ -369,7 +378,7 @@ function creerHttp(config, session, monde, sauvegardes, modules = {}) {
         }
 
         const cheminMonde = sauvegardes.cheminDuMonde()
-        if (!cheminMonde) return json(reponse, 404, { erreur: 'aucun monde publié' })
+        if (!cheminMonde) return json(reponse, 404, { erreur: t('http.aucun-monde-publie') })
 
         const info = sauvegardes.infoMonde()
         reponse.writeHead(200, {
@@ -400,7 +409,7 @@ function creerHttp(config, session, monde, sauvegardes, modules = {}) {
   })
 
   serveur.on('clientError', (_e, socket) => socket.destroy())
-  serveur.on('error', (e) => journal.erreur(`TCP : ${e.message}`))
+  serveur.on('error', (e) => journal.erreur(t('http.tcp', { v1: e.message })))
 
   return serveur
 }

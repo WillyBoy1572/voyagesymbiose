@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  TEMPS — une seule horloge pour tout le monde
@@ -85,7 +94,7 @@ class Temps {
     }
     if (jours) {
       this.jour += jours
-      this.annoncer(`Jour ${this.jour}.`)
+      this.annoncer('temps.jour', { v1: this.jour })
     }
 
     const h = Math.floor(total / 60) % 24
@@ -115,7 +124,7 @@ class Temps {
     if (suivante === actuelle) return false
 
     this.monde.reglerMeteo(suivante)
-    this.annoncer(`La météo passe à « ${suivante} ».`)
+    this.annoncer('temps.la-meteo-passe-a', { v1: suivante })
     return true
   }
 

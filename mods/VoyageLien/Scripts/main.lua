@@ -301,6 +301,126 @@ end
      pas nos arguments, on retombe sur `PrintString` de Kismet : du texte de
      debogage dans un coin, mais qui marche partout.
 ]]
+--[[
+  TROIS LANGUES, DANS LE JEU
+
+  Ce que le mod ecrit a l ecran suit la langue choisie dans le lanceur : le
+  pont la lui envoie a chaque lot, et le mod la garde.
+
+  ATTENTION : LE FRANCAIS EST LE SEUL REPLI. Une cle absente d une traduction
+  retombe sur le francais plutot que de laisser un trou. Une cle absente
+  partout rend la cle elle meme : c est laid, et c est fait pour se voir.
+
+  ATTENTION : PAS D ACCENTS DANS CE FICHIER. Le jeu affiche par
+  AddMessageBySlot, qui ne rend pas les caracteres accentues de maniere
+  fiable ; tout passe deja par ascii(). On ecrit donc sans accent plutot que
+  d afficher des carres a la place des lettres.
+]]
+local langue = "fr"
+
+local TEXTES = {
+    fr = {
+        pasConnecte = "pas connecte : ouvre le lanceur et clique << Connecter >>.",
+        lienCoupe = "le lien s'est coupe.",
+        estLa = "{1} est la.",
+        estParti = "{1} est parti.",
+        creatures = "creatures : {1}",
+        seul = "tu es seul pour l'instant.",
+        avecToi = "{1} avec toi : {2}",
+        pasEnPartie = "pas en partie.",
+        personneNiRdv = "personne en jeu et aucun point de rendez-vous. Que quelqu'un appuie sur F3 la ou vous voulez vous retrouver.",
+        tuArrives = "tu arrives pres de {1}.",
+        deplacementEchoue = "le deplacement a echoue. Envoie-moi cette ligne.",
+        pointMarque = "point marque pour tout le monde.",
+        tuFaisSigne = "tu fais signe.",
+        coffreVide = "le coffre commun est vide. Depuis le lanceur, onglet Coffre, tu peux y deposer.",
+        coffre = "coffre commun : {1}",
+        aide = "F1 debug - F2 creatures ({1}) - F3 point de retrouvailles - F4 aide - F5 rejoindre - F6 qui est la - F7 installer le monde - F9 publier - F10 coffre - F11 marquer - F12 salut",
+        debugFerme = "debug ferme.",
+        rdvPose = "point de retrouvailles pose ici.",
+        demandeInstaller = "demande envoyee au lanceur : installer le monde du serveur...",
+        demandePublier = "demande envoyee au lanceur : publier ta partie...",
+        debugJoueurs = "joueurs {1}",
+        debugCreatures = "creatures {1} (masquees {2}, classes {3})",
+        debugMode = "mode {1}",
+        debugHote = " / hote",
+        debugRendu = "rendu {1}",
+        debugEnvoyes = "envoyes {1}",
+        debugHorloge = "horloge {1}s",
+    },
+    en = {
+        pasConnecte = "not connected: open the launcher and click “Connect”.",
+        lienCoupe = "the link has dropped.",
+        estLa = "{1} is here.",
+        estParti = "{1} has left.",
+        creatures = "creatures: {1}",
+        seul = "you are alone for now.",
+        avecToi = "{1} with you: {2}",
+        pasEnPartie = "not in a game.",
+        personneNiRdv = "nobody in game and no rally point. Someone press F3 where you want to meet.",
+        tuArrives = "you arrive near {1}.",
+        deplacementEchoue = "the move failed. Send me this line.",
+        pointMarque = "point marked for everyone.",
+        tuFaisSigne = "you wave.",
+        coffreVide = "the shared chest is empty. From the launcher, Chest tab, you can drop things in.",
+        coffre = "shared chest: {1}",
+        aide = "F1 debug - F2 creatures ({1}) - F3 rally point - F4 help - F5 join - F6 who is here - F7 install the world - F9 publish - F10 chest - F11 mark - F12 wave",
+        debugFerme = "debug closed.",
+        rdvPose = "rally point set here.",
+        demandeInstaller = "request sent to the launcher: install the server world...",
+        demandePublier = "request sent to the launcher: publish your save...",
+        debugJoueurs = "players {1}",
+        debugCreatures = "creatures {1} (hidden {2}, classes {3})",
+        debugMode = "mode {1}",
+        debugHote = " / host",
+        debugRendu = "render {1}",
+        debugEnvoyes = "sent {1}",
+        debugHorloge = "clock {1}s",
+    },
+    es = {
+        pasConnecte = "sin conexion: abre el lanzador y haz clic en «Conectar».",
+        lienCoupe = "el enlace se ha cortado.",
+        estLa = "{1} esta aqui.",
+        estParti = "{1} se ha ido.",
+        creatures = "criaturas: {1}",
+        seul = "estas solo por ahora.",
+        avecToi = "{1} contigo: {2}",
+        pasEnPartie = "no estas en partida.",
+        personneNiRdv = "nadie en la partida y ningun punto de encuentro. Que alguien pulse F3 donde querais reuniros.",
+        tuArrives = "llegas cerca de {1}.",
+        deplacementEchoue = "el desplazamiento ha fallado. Enviame esta linea.",
+        pointMarque = "punto marcado para todos.",
+        tuFaisSigne = "saludas con la mano.",
+        coffreVide = "el cofre comun esta vacio. Desde el lanzador, pestana Cofre, puedes dejar cosas.",
+        coffre = "cofre comun: {1}",
+        aide = "F1 depuracion - F2 criaturas ({1}) - F3 punto de encuentro - F4 ayuda - F5 unirse - F6 quien esta - F7 instalar el mundo - F9 publicar - F10 cofre - F11 marcar - F12 saludo",
+        debugFerme = "depuracion cerrada.",
+        rdvPose = "punto de encuentro puesto aqui.",
+        demandeInstaller = "peticion enviada al lanzador: instalar el mundo del servidor...",
+        demandePublier = "peticion enviada al lanzador: publicar tu partida...",
+        debugJoueurs = "jugadores {1}",
+        debugCreatures = "criaturas {1} (ocultas {2}, clases {3})",
+        debugMode = "modo {1}",
+        debugHote = " / anfitrion",
+        debugRendu = "render {1}",
+        debugEnvoyes = "enviados {1}",
+        debugHorloge = "reloj {1}s",
+    },
+}
+
+--[[ Le texte, dans la langue courante, avec ses valeurs inserees. ]]
+local function L(cle, ...)
+    local table_ = TEXTES[langue] or TEXTES.fr
+    local modele = table_[cle] or TEXTES.fr[cle] or cle
+    local valeurs = { ... }
+    -- ATTENTION : UNE VALEUR MANQUANTE LAISSE SON MARQUEUR VISIBLE.
+    return (modele:gsub("{(%d)}", function(n)
+        local v = valeurs[tonumber(n)]
+        if v == nil then return "{" .. n .. "}" end
+        return tostring(v)
+    end))
+end
+
 local function ecran(texte, couleur, secondes)
     local propre = ascii(texte)
 
@@ -376,7 +496,7 @@ end
 
 local function demanderAuLanceur(commande)
     if not sortie then
-        ecran("pas connecte : ouvre le lanceur et clique « Connecter ».", ORANGE, 8.0)
+        ecran(L("pasConnecte"), ORANGE, 8.0)
         return false
     end
     deposer("cmd " .. commande)
@@ -393,7 +513,7 @@ local function envoyerLaFile()
         if not ok then
             pcall(function() sortie:close() end)
             sortie = nil
-            ecran("le lien s'est coupe.", ORANGE, 6.0)
+            ecran(L("lienCoupe"), ORANGE, 6.0)
             return
         end
     end
@@ -887,6 +1007,9 @@ local function lireDuPont()
         elseif mot == "debug" then
             lot.debug = ligne:match("^debug%s+(%d)") == "1"
 
+        elseif mot == "langue" then
+            lot.langue = ligne:match("^langue%s+(%a%a)")
+
         elseif mot == "rdv" then
             local rx, ry, rz, ryaw, rqui = ligne:match("^rdv%s+(%S+)%s+(%S+)%s+(%S+)%s+(%S+)%s+(.*)$")
             if rx and tonumber(rx) then
@@ -1031,7 +1154,7 @@ local function suivreLesAutres(lot)
                 f.plaque = accrocherPlaque(acteur, j.nom)
                 fantomes[id] = f
                 journal(j.nom .. " apparait.")
-                ecran(j.nom .. " est la.", VERT, 5.0)
+                ecran(L("estLa", j.nom), VERT, 5.0)
             end
         else
             empiler(f, j)
@@ -1086,7 +1209,7 @@ local function suivreLesAutres(lot)
             local nom = f.nom or id
             fantomes[id] = nil
             journal(nom .. " est parti.")
-            ecran(nom .. " est parti.", BLANC, 5.0)
+            ecran(L("estParti", nom), BLANC, 5.0)
         end
     end
 end
@@ -1360,7 +1483,7 @@ local function changerDeMode(nouveau)
     -- Le prochain battement rebalaye : les creatures locales seront reprises.
     dernierBalayage = 0
     journal("creatures : mode " .. nouveau .. ".")
-    ecran("creatures : " .. nouveau, BLANC, 5.0)
+    ecran(L("creatures", nouveau), BLANC, 5.0)
 end
 
 --[[
@@ -1675,9 +1798,9 @@ local function montrerLesAutres()
     end
 
     if #lignes == 0 then
-        ecran("tu es seul pour l'instant.", BLANC, 6.0)
+        ecran(L("seul"), BLANC, 6.0)
     else
-        ecran(#lignes .. " avec toi : " .. table.concat(lignes, " - "), VERT, 8.0)
+        ecran(L("avecToi", #lignes, table.concat(lignes, " - ")), VERT, 8.0)
     end
 end
 
@@ -1712,7 +1835,7 @@ end
 local function seRapprocher()
     local pion = trouverPion()
     if not estValide(pion) then
-        ecran("pas en partie.", ORANGE, 5.0)
+        ecran(L("pasEnPartie"), ORANGE, 5.0)
         return
     end
 
@@ -1730,7 +1853,7 @@ local function seRapprocher()
     end
 
     if not cible then
-        ecran("personne en jeu et aucun point de rendez-vous. Que quelqu'un appuie sur F3 la ou vous voulez vous retrouver.", ORANGE, 12.0)
+        ecran(L("personneNiRdv"), ORANGE, 12.0)
         return
     end
 
@@ -1741,9 +1864,9 @@ local function seRapprocher()
         )
     end)
     if ok then
-        ecran("tu arrives pres de " .. quoi .. ".", VERT, 6.0)
+        ecran(L("tuArrives", quoi), VERT, 6.0)
     else
-        ecran("le deplacement a echoue. Envoie-moi cette ligne.", ORANGE, 8.0)
+        ecran(L("deplacementEchoue"), ORANGE, 8.0)
     end
 end
 
@@ -1751,30 +1874,30 @@ end
 local function poserUnPing()
     local pion = trouverPion()
     if not estValide(pion) then
-        ecran("pas en partie.", ORANGE, 5.0)
+        ecran(L("pasEnPartie"), ORANGE, 5.0)
         return
     end
     local p = sur(function() return pion:K2_GetActorLocation() end, nil)
     if not p then return end
     deposer(string.format("ev ping %.1f %.1f %.1f ici", p.X or 0, p.Y or 0, p.Z or 0))
-    ecran("point marque pour tout le monde.", OR, 5.0)
+    ecran(L("pointMarque"), OR, 5.0)
 end
 
 local function saluer()
     deposer("cmd geste-salut")
-    ecran("tu fais signe.", BLANC, 4.0)
+    ecran(L("tuFaisSigne"), BLANC, 4.0)
 end
 
 local function montrerLeCoffre()
     if #coffreServeur == 0 then
-        ecran("le coffre commun est vide. Depuis le lanceur, onglet Coffre, tu peux y deposer.", BLANC, 9.0)
+        ecran(L("coffreVide"), BLANC, 9.0)
         return
     end
     local bouts = {}
     for i = 1, math.min(#coffreServeur, 8) do
         bouts[#bouts + 1] = coffreServeur[i].nom .. " x" .. coffreServeur[i].nombre
     end
-    ecran("coffre commun : " .. table.concat(bouts, ", "), OR, 10.0)
+    ecran(L("coffre", table.concat(bouts, ", ")), OR, 10.0)
 end
 
 --[[
@@ -1797,6 +1920,7 @@ end
 local function appliquerReglages(lot)
     if lot.plaques then plaques = lot.plaques end
     if lot.debug ~= nil then debug = lot.debug end
+    if lot.langue and TEXTES[lot.langue] then langue = lot.langue end
 end
 
 local function montrerDebug()
@@ -1807,12 +1931,12 @@ local function montrerDebug()
     for _ in pairs(classesCreatures) do nClasses = nClasses + 1 end
 
     local lignes = {
-        "joueurs " .. nFantomes,
-        "creatures " .. nCreatures .. " (masquees " .. nMasquees .. ", classes " .. nClasses .. ")",
-        "mode " .. modeCreatures .. (jeSuisHote and " / hote" or ""),
-        "rendu " .. (faits["rendu"] or "?"),
-        "envoyes " .. envoyes,
-        "horloge " .. math.floor(horlogeMs / 1000) .. "s",
+        L("debugJoueurs", nFantomes),
+        L("debugCreatures", nCreatures, nMasquees, nClasses),
+        L("debugMode", modeCreatures) .. (jeSuisHote and L("debugHote") or ""),
+        L("debugRendu", faits["rendu"] or "?"),
+        L("debugEnvoyes", envoyes),
+        L("debugHorloge", math.floor(horlogeMs / 1000)),
     }
     ecran(table.concat(lignes, " | "), OR, 12.0)
 
@@ -1822,7 +1946,7 @@ local function montrerDebug()
 end
 
 local function montrerAide()
-    ecran("F1 debug - F2 creatures (" .. modeCreatures .. ") - F3 point de retrouvailles - F4 aide - F5 rejoindre - F6 qui est la - F7 installer le monde - F9 publier - F10 coffre - F11 marquer - F12 salut", BLANC, 16.0)
+    ecran(L("aide", modeCreatures), BLANC, 16.0)
 end
 
 --[[
@@ -1859,24 +1983,24 @@ local function poserLesTouches()
     ]]
     lier("F1", function()
         debug = not debug
-        if debug then montrerDebug() else ecran("debug ferme.", BLANC, 4.0) end
+        if debug then montrerDebug() else ecran(L("debugFerme"), BLANC, 4.0) end
     end)
     lier("F2", function()
         changerDeMode(modeCreatures == "miroir" and "annonce" or "miroir")
     end)
     lier("F3", function()
-        ecran("point de retrouvailles pose ici.", VERT, 6.0)
+        ecran(L("rdvPose"), VERT, 6.0)
         demanderAuLanceur("rdv-poser")
     end)
     lier("F4", montrerAide)
     lier("F5", seRapprocher)
     lier("F6", montrerLesAutres)
     lier("F7", function()
-        ecran("demande envoyee au lanceur : installer le monde du serveur...", BLANC, 6.0)
+        ecran(L("demandeInstaller"), BLANC, 6.0)
         demanderAuLanceur("installer-monde")
     end)
     lier("F9", function()
-        ecran("demande envoyee au lanceur : publier ta partie...", BLANC, 6.0)
+        ecran(L("demandePublier"), BLANC, 6.0)
         demanderAuLanceur("publier-monde")
     end)
     lier("F10", montrerLeCoffre)
@@ -2081,5 +2205,7 @@ if VOYAGE_ESSAI then
         avancerHorloge = function(ms) horlogeMs = horlogeMs + ms end,
         faits = function() return faits end,
         direction = direction,
+        L = L,
+        TEXTES = TEXTES,
     }
 end

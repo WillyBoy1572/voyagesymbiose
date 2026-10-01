@@ -297,6 +297,12 @@ async function demarrer(reglages) {
          « symetrique » resiste — et le serveur le dit lui-meme dans son rapport
          plutot que de laisser l'hote accuser ses amis.
     */
+    /*
+      ⚠️ LA CONSOLE DU SERVEUR PARLE LA LANGUE DU LANCEUR. C'est l'hôte qui la
+         lit, et c'est lui qui a choisi. Les JOUEURS, eux, reçoivent leurs
+         messages dans la leur — chacun l'annonce en arrivant.
+    */
+    LANGUE: String(reglages.langue || 'fr').slice(0, 2),
     PERCAGE: reglages.percage === false ? '0' : '1',
     RENDEZVOUS_ADRESSE: String(reglages.rendezvous || RENDEZVOUS_PAR_DEFAUT).slice(0, 128),
     PAYS: String(reglages.pays || '').slice(0, 8),

@@ -1,6 +1,7 @@
 'use strict'
 
 const crypto = require('node:crypto')
+const { T, langueValide } = require('./langues')
 const { encoder } = require('./protocole')
 const { Qualite } = require('./reseau')
 const journal = require('./journal')
@@ -47,7 +48,7 @@ const REPRISE_MS = 10 * 60_000
 const DETAIL_JUSQUA = 15000
 
 class Joueur {
-  constructor({ id, nom, adresse, port, empreinte = null, spectateur = false, capacites = [] }) {
+  constructor({ id, nom, adresse, port, empreinte = null, spectateur = false, capacites = [], langue = 'fr' }) {
     this.id = id
     this.nom = nom
     this.adresse = adresse
@@ -59,6 +60,8 @@ class Joueur {
     this.empreinte = empreinte
     this.spectateur = spectateur === true
     this.capacites = new Set(capacites)
+    /** La langue de SON lanceur. Le serveur lui parle dedans, pas dans la sienne. */
+    this.langue = langueValide(langue)
     this.pos = { x: 0, y: 0, z: 0 }
     this.rot = { x: 0, y: 0, z: 0 }
     /* Ce qui fait marcher les jambes chez les autres : leur pion lit la vitesse. */
@@ -295,9 +298,13 @@ class Session {
     if (empreinte) {
       for (const autre of [...this.joueurs.values()]) {
         if (autre.empreinte === empreinte) {
-          journal.avis(`${autre.nom} remplacé par une nouvelle connexion de la même identité.`)
-          this.envoyerA(autre, { t: 'expulse', raison: 'remplacé par une autre connexion' })
-          this.retirer(autre, 'identité reprise ailleurs')
+          journal.avis(T(this.config.langue, 'session.remplace', { v1: autre.nom }))
+          this.envoyerA(autre, {
+            t: 'expulse',
+            // La raison part dans SA langue : c'est lui qui la lit, pas nous.
+            raison: T(autre.langue, 'session.expulse-remplace'),
+          })
+          this.retirer(autre, T(this.config.langue, 'session.reprise-ailleurs'))
         }
       }
     }
@@ -311,6 +318,7 @@ class Session {
       empreinte,
       spectateur,
       capacites: message.capacites,
+      langue: message.langue,
     })
     joueur.hote = this.nombreJouant === 0 && !spectateur
 
@@ -446,7 +454,7 @@ class Session {
         const suivant = candidats.sort((a, b) => a.arriveLe - b.arriveLe)[0]
         suivant.hote = true
         journal.info(`${suivant.nom} devient l'hote.`)
-        this.messageA(suivant, 'Tu es maintenant l’hôte de la partie.')
+        this.messageA(suivant, 'session.te-voila-hote')
         this.diffuser({ t: 'hote', id: suivant.id, nom: suivant.nom })
         /*
           ⚠️ LE NOUVEL HOTE REMET LES CREATURES A ZERO. Elles vivaient dans le
@@ -508,17 +516,45 @@ class Session {
     return combien
   }
 
-  messageA(joueur, texte) {
+  /**
+   * Un message systeme a une personne, dans SA langue.
+   *
+   * ⚠️ DEUX FORMES, ET LA DIFFERENCE COMPTE. Avec une cle, on traduit : c'est
+   *    nous qui parlons. Avec `brut`, on envoie tel quel : c'est quelqu'un
+   *    d'autre qui parle -- un message de chat, un pseudo, une raison de
+   *    bannissement tapee a la main. Traduire la parole de quelqu'un serait la
+   *    reecrire, et on ne le fait jamais.
+   */
+  messageA(joueur, cle, valeurs = null) {
+    this.envoyerA(joueur, { t: 'systeme', texte: T(joueur.langue, cle, valeurs) })
+  }
+
+  messageBrutA(joueur, texte) {
     this.envoyerA(joueur, { t: 'systeme', texte })
   }
 
-  messageATous(texte) {
+  /**
+   * Le meme message a tout le monde, chacun dans sa langue.
+   *
+   * ⚠️ ON NE DIFFUSE PAS UN TAMPON UNIQUE. Trois joueurs peuvent lire la meme
+   *    partie en trois langues : il faut encoder une fois par langue presente,
+   *    pas une fois pour tous. C'est le prix, et il est petit -- trois encodages
+   *    au lieu d'un, sur un message qui part rarement.
+   */
+  messageATous(cle, valeurs = null) {
+    for (const j of this.joueurs.values()) {
+      this.envoyerA(j, { t: 'systeme', texte: T(j.langue, cle, valeurs) })
+    }
+  }
+
+  /** Le meme, tel quel : la parole de quelqu'un, pas la notre. */
+  messageBrutATous(texte) {
     this.diffuser({ t: 'systeme', texte })
   }
 
   /** Meme chose, sous un nom que le reste du serveur peut appeler sans ambiguite. */
-  annoncer(texte) {
-    this.messageATous(texte)
+  annoncer(cle, valeurs = null) {
+    this.messageATous(cle, valeurs)
   }
 
   /** Ce qu'une ressource voit d'un joueur : jamais son adresse ni son jeton. */

@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  PERMISSIONS — qui a le droit de quoi
@@ -169,13 +178,13 @@ class Permissions {
    *    nommer un admin se nommerait admin par personne interposee.
    */
   poserRole(acteur, empreinte, role) {
-    if (!this.peut(acteur, 'role')) return 'Tu n’as pas le droit de changer les rôles.'
-    if (role !== null && !RANG.has(role)) return `Rôle inconnu. Au choix : ${ROLES.join(', ')}.`
+    if (!this.peut(acteur, 'role')) return t('permissions.tu-n-as-pas-le')
+    if (role !== null && !RANG.has(role)) return t('permissions.role-inconnu-au-choix', { v1: ROLES.join(', ') })
     if (role !== null && (RANG.get(role) || 0) >= (RANG.get(this.role(acteur)) || 0)) {
-      return 'Tu ne peux pas donner un rôle égal ou supérieur au tien.'
+      return t('permissions.tu-ne-peux-pas-donner')
     }
     if (!this.identites || !this.identites.profil(empreinte)) {
-      return 'Cette identité est inconnue du serveur.'
+      return t('permissions.cette-identite-est-inconnue-du')
     }
     this.identites.poserRole(empreinte, role)
     return null

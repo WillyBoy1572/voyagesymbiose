@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -139,9 +148,9 @@ class Identites {
       }
       const oublies = this.#oublierLesAnciens()
       this.journal(
-        `${this.profils.size} identité(s) connue(s)` +
-          (oublies ? ` (${oublies} oubliée(s), plus vues depuis un an)` : '') +
-          '.',
+        oublies
+          ? t('identite.connues-et-oubliees', { v1: this.profils.size, v2: oublies })
+          : t('identite.connues', { v1: this.profils.size }),
       )
     } catch {
       /* premier demarrage : rien a charger */
@@ -164,7 +173,7 @@ class Identites {
       this.sale = false
       return true
     } catch (e) {
-      this.journal(`identités non enregistrées : ${e.message}`)
+      this.journal(t('identite.identites-non-enregistrees', { v1: e.message }))
       return false
     }
   }

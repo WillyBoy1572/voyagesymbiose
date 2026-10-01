@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 const fs = require('node:fs')
 const path = require('node:path')
 const crypto = require('node:crypto')
@@ -60,7 +69,7 @@ class Sauvegardes {
         const propre = brut.split(/\r?\n/)[0].trim()
         if (propre) {
           this.motDePasse = propre
-          this.journal('mot de passe du monde lu dans donnees/motdepasse-monde.txt.')
+          this.journal(t('sauvegardes.mot-de-passe-du-monde'))
         }
       } catch {
         /* pas de fichier : publication fermee, et c'est tres bien */
@@ -74,7 +83,7 @@ class Sauvegardes {
     // Une fiche sans archive ment : on la jette plutot que de promettre un monde absent.
     if (this.fiche && !fs.existsSync(this.cheminArchive)) {
       this.fiche = null
-      this.journal('fiche de monde sans archive : ignoree.')
+      this.journal(t('sauvegardes.fiche-de-monde-sans-archive'))
     }
   }
 
@@ -130,7 +139,7 @@ class Sauvegardes {
          prouvent pas grand-chose, mais ils arretent l'envoi accidentel d'un
          fichier de sauvegarde brut, qui ne s'installerait chez personne.
     */
-    if (octets[0] !== 0x50 || octets[1] !== 0x4b) throw new Error('ce n’est pas une archive zip')
+    if (octets[0] !== 0x50 || octets[1] !== 0x4b) throw new Error(t('sauvegardes.ce-n-est-pas-une'))
 
     const empreinte = crypto.createHash('sha256').update(octets).digest('hex')
 
@@ -152,7 +161,7 @@ class Sauvegardes {
       nom: String(nom ?? 'Monde').slice(0, 60),
       etiquette: String(etiquette ?? '').slice(0, 60),
       note: String(note ?? '').slice(0, 280),
-      publiePar: String(publiePar ?? 'hôte').slice(0, 24),
+      publiePar: String(publiePar ?? t('sauvegardes.hote')).slice(0, 24),
       fichiers: Number.isFinite(fichiers) ? fichiers : null,
       empreinte,
       taille: octets.length,
@@ -160,7 +169,7 @@ class Sauvegardes {
     }
     this.ecrireJson(this.cheminFiche, this.fiche)
 
-    this.journal(`monde « ${this.fiche.nom} » publié par ${this.fiche.publiePar} (${Math.round(octets.length / 1024)} ko).`)
+    this.journal(t('sauvegardes.monde-publie-par-ko', { v1: this.fiche.nom, v2: this.fiche.publiePar, v3: Math.round(octets.length / 1024) }))
     return this.infoMonde()
   }
 
@@ -168,12 +177,12 @@ class Sauvegardes {
   revenirEnArriere() {
     const avant = `${this.cheminArchive}.precedent`
     const ficheAvant = this.lireJson(`${this.cheminFiche}.precedent`, null)
-    if (!fs.existsSync(avant) || !ficheAvant) throw new Error('aucun monde précédent')
+    if (!fs.existsSync(avant) || !ficheAvant) throw new Error(t('sauvegardes.aucun-monde-precedent'))
 
     fs.copyFileSync(avant, this.cheminArchive)
     this.fiche = ficheAvant
     this.ecrireJson(this.cheminFiche, this.fiche)
-    this.journal(`retour au monde précédent « ${this.fiche.nom} ».`)
+    this.journal(t('sauvegardes.retour-au-monde-precedent', { v1: this.fiche.nom }))
     return this.infoMonde()
   }
 
@@ -219,7 +228,7 @@ class Sauvegardes {
       le: new Date().toISOString(),
     }
     this.ecrireJson(this.cheminRdv, this.rendezVous)
-    this.journal(`point de rendez-vous posé par ${this.rendezVous.parQui}.`)
+    this.journal(t('sauvegardes.point-de-rendez-vous-pose', { v1: this.rendezVous.parQui }))
     return this.rendezVous
   }
 
@@ -268,7 +277,7 @@ class Sauvegardes {
     try {
       this.ecrireJson(this.cheminJoueurs, this.joueurs)
     } catch (e) {
-      this.journal(`impossible d’écrire les positions : ${e.message}`)
+      this.journal(t('sauvegardes.impossible-d-ecrire-les-positions', { v1: e.message }))
     }
   }
 

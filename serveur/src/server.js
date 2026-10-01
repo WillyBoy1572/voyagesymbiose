@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  SYMBIOSE VOYAGE — serveur cooperatif pour The Last Caretaker
@@ -109,13 +118,13 @@ function envoyerPaquet(tampon, port, adresse) {
     if (!rdv) return
     const enveloppe = encoder({ t: 'rdv-pont', s: port, d: tampon.toString('base64') })
     socket.send(enveloppe, rdv.port, rdv.adresse, (e) => {
-      if (e) journal.avis(`relais ${port} — ${e.message}`)
+      if (e) journal.avis(t('server.relais', { v1: port, v2: e.message }))
     })
     return
   }
   socket.send(tampon, port, adresse, (e) => {
     // Un envoi rate vers un client parti n'est pas une erreur du serveur.
-    if (e) journal.avis(`envoi vers ${adresse}:${port} — ${e.message}`)
+    if (e) journal.avis(t('server.envoi-vers', { v1: adresse, v2: port, v3: e.message }))
   })
 }
 
@@ -494,10 +503,10 @@ function traiterMessage(brut, adresse, port) {
       if (resultat.ok) {
         session.messageATous(
           message.action === 'deposer'
-            ? `${joueur.nom} dépose ${resultat.nombre} ${resultat.nom} dans le coffre commun.`
+            ? t('server.depose-dans-le-coffre-commun', { v1: joueur.nom, v2: resultat.nombre, v3: resultat.nom })
             : message.action === 'retirer'
-              ? `${joueur.nom} prend ${resultat.nombre} ${resultat.nom} dans le coffre commun.`
-              : `${resultat.nombre} ${resultat.nom} revient au coffre.`,
+              ? t('server.prend-dans-le-coffre-commun', { v1: joueur.nom, v2: resultat.nombre, v3: resultat.nom })
+              : t('server.revient-au-coffre', { v1: resultat.nombre, v2: resultat.nom }),
         )
       }
       return
@@ -577,7 +586,7 @@ function traiterMessage(brut, adresse, port) {
     }
 
     case 'adieu':
-      session.retirer(joueur, 'départ')
+      session.retirer(joueur, t('server.depart'))
       return
   }
 }
@@ -591,7 +600,7 @@ function traiterMessage(brut, adresse, port) {
  */
 function chat(joueur, message) {
   if (!session.peut(joueur, 'parler')) {
-    session.messageA(joueur, 'Tu ne peux pas parler sur ce serveur.')
+    session.messageA(joueur, 'server.tu-ne-peux-pas-parler')
     return
   }
   if (moderation) {
@@ -601,12 +610,12 @@ function chat(joueur, message) {
          identité ni adresse propre à épingler.
     */
     if (joueur.muselJusqua && joueur.muselJusqua > Date.now()) {
-      session.messageA(joueur, 'Tu ne peux pas parler pour le moment.')
+      session.messageA(joueur, 'server.tu-ne-peux-pas-parler-2')
       return
     }
     const musele = moderation.musele(joueur.empreinte, joueur.adresse)
     if (musele) {
-      session.messageA(joueur, 'Tu ne peux pas parler pour le moment.')
+      session.messageA(joueur, 'server.tu-ne-peux-pas-parler-2')
       return
     }
   }
@@ -616,7 +625,7 @@ function chat(joueur, message) {
   if (message.canal === 'prive') {
     const cible = message.a ? session.parNom(message.a) : null
     if (!cible) {
-      session.messageA(joueur, 'Personne de ce nom en jeu.')
+      session.messageA(joueur, 'server.personne-de-ce-nom-en')
       return
     }
     session.envoyerA(cible, paquet)
@@ -628,7 +637,7 @@ function chat(joueur, message) {
   if (message.canal === 'equipe') {
     const eq = equipes.equipeDe(joueur.id)
     if (!eq) {
-      session.messageA(joueur, 'Tu n’es dans aucune équipe.')
+      session.messageA(joueur, 'server.tu-n-es-dans-aucune')
       return
     }
     paquet.equipe = eq.nom
@@ -658,7 +667,7 @@ function chat(joueur, message) {
       }
     }
     journal.info(`<${joueur.nom} (local)> ${message.texte}`)
-    if (entendu === 0) session.messageA(joueur, 'Personne n’est assez près pour t’entendre.')
+    if (entendu === 0) session.messageA(joueur, 'server.personne-n-est-assez-pres')
     return
   }
 
@@ -708,10 +717,10 @@ function arrivee(message, adresse, port) {
     coffre: inventaires.instantane(),
   })
   // Le monde vient d'etre envoye a ce joueur ; les autres l'ont deja.
-  session.messageA(joueur, `Bienvenue sur ${config.nom}. Tape /aide pour les commandes.`)
+  session.messageA(joueur, 'server.bienvenue-sur-tape-aide-pour', { v1: config.nom })
 
   const motd = monde.donnees.get('motd')
-  if (motd) session.messageA(joueur, `Mot du jour : ${motd}`)
+  if (motd) session.messageA(joueur, 'server.mot-du-jour', { v1: motd })
 
   /*
     ⚠️ LE POINT DE RENDEZ-VOUS PART DES L'ARRIVEE. C'est le seul moment ou il
@@ -732,7 +741,7 @@ function demarrer() {
   for (const a of config.avertissements) journal.avis(a)
 
   socket.on('error', (e) => {
-    journal.erreur(`UDP : ${e.message}`)
+    journal.erreur(t('server.udp', { v1: e.message }))
     arreter(1)
   })
 
@@ -754,16 +763,16 @@ function demarrer() {
     })
 
     http.listen(config.portHttp, config.hote, () => {
-      journal.info(`${config.nom} — v${config.version}, protocole ${config.protocole} (min ${config.protocoleMinimum})`)
-      journal.info(`jeu : UDP ${config.hote}:${config.port}`)
-      journal.info(`monde et navigateur : TCP ${config.hote}:${config.portHttp}`)
-      journal.info(`${config.maxJoueurs} places, ${config.hz} instantanés/s${config.motDePasse ? ', mot de passe actif' : ''}`)
-      journal.info(`transport : ${transport.choisir().nom}`)
-      if (config.percage) journal.info(`perçage actif vers ${config.rendezvousAdresse || '(adresse manquante)'}`)
-      if (config.rendezvous) journal.info('point de rendez-vous actif sur ce port.')
-      if (config.cycleMinutes) journal.info(`cycle jour/nuit : ${config.cycleMinutes} min de jeu par minute réelle`)
+      journal.info(t('server.v-protocole-min', { v1: config.nom, v2: config.version, v3: config.protocole, v4: config.protocoleMinimum }))
+      journal.info(t('server.ecoute-jeu', { v1: config.hote, v2: config.port }))
+      journal.info(t('server.ecoute-monde', { v1: config.hote, v2: config.portHttp }))
+      journal.info(t('server.places-instantanes-s', { v1: config.maxJoueurs, v2: config.hz, v3: config.motDePasse ? ', mot de passe actif' : '' }))
+      journal.info(t('server.transport', { v1: transport.choisir().nom }))
+      if (config.percage) journal.info(t('server.percage-actif-vers', { v1: config.rendezvousAdresse || '(adresse manquante)' }))
+      if (config.rendezvous) journal.info(t('server.point-de-rendez-vous-actif'))
+      if (config.cycleMinutes) journal.info(t('server.cycle-jour-nuit-min-de', { v1: config.cycleMinutes }))
       if (permissions.proprietaires.size) {
-        journal.info(`${permissions.proprietaires.size} propriétaire(s) déclaré(s) par empreinte.`)
+        journal.info(t('server.proprietaire-s-declare-s-par', { v1: permissions.proprietaires.size }))
       }
 
       ressources.chargerTout()
@@ -833,7 +842,7 @@ function demarrer() {
     })
 
     http.on('error', (e) => {
-      journal.erreur(`TCP ${config.portHttp} : ${e.message}`)
+      journal.erreur(t('server.tcp', { v1: config.portHttp, v2: e.message }))
       arreter(1)
     })
   })
@@ -859,7 +868,7 @@ function arreter(code = 0) {
     ressources.emettre('arret')
     ressources.enregistrerTousLesEtats()
   } catch (e) {
-    journal.avis(`état non enregistré : ${e.message}`)
+    journal.avis(t('server.etat-non-enregistre', { v1: e.message }))
   }
 
   try {
@@ -869,19 +878,19 @@ function arreter(code = 0) {
     /* un annuaire injoignable ne retient pas l'arret */
   }
 
-  session.messageATous('Le serveur s’arrête.')
+  session.messageATous('server.le-serveur-s-arrete')
   try {
     socket.close()
   } catch {
     /* deja ferme */
   }
-  journal.info('Arrêté.')
+  journal.info(t('server.arrete'))
   process.exit(code)
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
-    journal.info(`Signal ${signal} reçu.`)
+    journal.info(t('server.signal-recu', { v1: signal }))
     arreter(0)
   })
 }
@@ -931,7 +940,7 @@ function ecouterLaConsole() {
       reste = reste.slice(coupure + 1)
       if (ligne) {
         if (/^(stop|arret|arrêt|quit|exit)$/i.test(ligne)) {
-          journal.info('Arrêt demandé par la console.')
+          journal.info(t('server.arret-demande-par-la-console'))
           arreter(0)
           return
         }
@@ -973,7 +982,7 @@ process.on('exit', () => {
      journalise ; si elle se repete, l'hebergeur relancera de toute facon.
 */
 process.on('uncaughtException', (e) => journal.erreur(`exception : ${e.stack || e.message}`))
-process.on('unhandledRejection', (e) => journal.erreur(`promesse rejetée : ${e}`))
+process.on('unhandledRejection', (e) => journal.erreur(t('server.promesse-rejetee', { v1: e })))
 
 if (require.main === module) demarrer()
 

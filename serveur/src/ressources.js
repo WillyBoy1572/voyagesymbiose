@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 const fs = require('node:fs')
 const path = require('node:path')
 const vm = require('node:vm')
@@ -129,7 +138,12 @@ class Ressources {
     }
 
     if (charges || refuses) {
-      this.journal(`ressources : ${charges} chargée(s)${refuses ? `, ${refuses} refusée(s)` : ''}.`)
+      this.journal(
+        t('ressources.ressources-chargee-s', {
+          v1: charges,
+          v2: refuses ? t('ressources.dont-refusees', { v1: refuses }) : '',
+        }),
+      )
     }
     return { charges, refuses }
   }
@@ -168,10 +182,10 @@ class Ressources {
 
       const entree = String(manifeste.principal || manifeste.main || 'principal.js').replace(/[^\w./-]/g, '')
       const cheminCode = path.resolve(dossier, entree)
-      if (!cheminCode.startsWith(dossier + path.sep)) throw new Error('fichier d’entrée hors du dossier')
+      if (!cheminCode.startsWith(dossier + path.sep)) throw new Error(t('ressources.fichier-d-entree-hors-du'))
 
       const code = fs.readFileSync(cheminCode, 'utf8')
-      if (code.length > CODE_MAX) throw new Error('fichier d’entrée trop gros')
+      if (code.length > CODE_MAX) throw new Error(t('ressources.fichier-d-entree-trop-gros'))
 
       r.etat = this.#lireEtat(r)
 
@@ -185,13 +199,13 @@ class Ressources {
 
       r.active = true
       r.erreur = null
-      this.journal(`ressource « ${propre} » v${r.version} chargée.`)
+      this.journal(t('ressources.ressource-v-chargee', { v1: propre, v2: r.version }))
       this.#appeler(r, 'demarrage', [])
       return true
     } catch (e) {
       r.active = false
       r.erreur = e instanceof Error ? e.message : String(e)
-      this.journal(`ressource « ${propre} » refusée : ${r.erreur}`)
+      this.journal(t('ressources.ressource-refusee', { v1: propre, v2: r.erreur }))
       return false
     }
   }
@@ -267,7 +281,7 @@ class Ressources {
       /** Ecoute un evenement du serveur. */
       sur(evenement, rappel) {
         const e = String(evenement || '')
-        if (!EVENEMENTS.includes(e)) throw new Error(`événement inconnu : ${e}`)
+        if (!EVENEMENTS.includes(e)) throw new Error(t('ressources.evenement-inconnu', { v1: e }))
         if (typeof rappel !== 'function') throw new Error('il faut une fonction')
         if (!r.ecoutes.has(e)) r.ecoutes.set(e, [])
         r.ecoutes.get(e).push(rappel)
@@ -277,7 +291,7 @@ class Ressources {
       commande(nom, options) {
         const n = String(nom || '').toLowerCase().replace(/[^a-z0-9-]/g, '')
         if (!n) throw new Error('nom de commande invalide')
-        if (!options || typeof options.faire !== 'function') throw new Error('il faut une fonction « faire »')
+        if (!options || typeof options.faire !== 'function') throw new Error(t('ressources.il-faut-une-fonction-faire'))
         r.commandes.set(n, {
           aide: limiteTexte(options.aide, 80),
           droit: options.droit ? String(options.droit).slice(0, 32) : 'commande',
@@ -385,7 +399,7 @@ class Ressources {
         rappel(...args)
       } catch (e) {
         r.erreur = e instanceof Error ? e.message : String(e)
-        this.journal(`ressource « ${r.nom} » a échoué sur « ${evenement} » : ${r.erreur}`)
+        this.journal(t('ressources.ressource-a-echoue-sur', { v1: r.nom, v2: evenement, v3: r.erreur }))
         /*
           ⚠️ ON DESACTIVE LA RESSOURCE FAUTIVE, ON NE LA LAISSE PAS CRIER A
              CHAQUE TICK. Une erreur par instantane remplirait la console et
@@ -393,7 +407,7 @@ class Ressources {
         */
         if (evenement === 'tick' || evenement === 'seconde') {
           r.ecoutes.delete(evenement)
-          this.journal(`ressource « ${r.nom} » : écoute « ${evenement} » désactivée.`)
+          this.journal(t('ressources.ressource-ecoute-desactivee', { v1: r.nom, v2: evenement }))
         }
       }
     }

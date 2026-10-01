@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  PERCAGE — le cote hote, celui qui est derriere la box
@@ -38,12 +47,9 @@ const PORTS_AVANT_VERDICT = 3
  *    dans une console ne dit a personne quoi faire ensuite.
  */
 const EXPLICATIONS = {
-  plein: 'le point de rendez-vous est plein ; réessaie dans une minute.',
-  billet_inconnu: 'ce billet n’existe plus (la partie est fermée, ou le billet a expiré).',
-  rendezvous_aveugle:
-    'ce point de rendez-vous ne voit pas les vraies adresses de ses visiteurs — ' +
-    'il est lui-même derrière un tunnel ou un proxy. Le perçage est impossible par ce ' +
-    'chemin : il faut un autre point de rendez-vous, ou rediriger un port sur ta box.',
+  plein: t('percage.le-point-de-rendez-vous'),
+  billet_inconnu: t('percage.ce-billet-n-existe-plus'),
+  rendezvous_aveugle: t('percage.aveugle'),
 }
 
 class Percage {
@@ -93,13 +99,13 @@ class Percage {
   demarrer(etat) {
     if (!this.actif) return false
     if (!this.cible) {
-      this.journal('perçage : RENDEZVOUS_ADRESSE illisible (attendu « hôte:port »).')
+      this.journal(t('percage.percage-rendezvous-adresse-illisible-attendu'))
       this.actif = false
       return false
     }
 
     this.etat = etat
-    this.journal(`perçage : annonce vers ${this.cible.adresse}:${this.cible.port}`)
+    this.journal(t('percage.percage-annonce-vers', { v1: this.cible.adresse, v2: this.cible.port }))
     this.battre()
     this.minuterie = setInterval(() => this.battre(), BATTEMENT_MS)
     /*
@@ -164,7 +170,7 @@ class Percage {
         this.derniereReponse = Date.now()
         if (this.billet !== message.billet) {
           this.billet = message.billet
-          this.journal(`perçage : billet « ${this.billet} » — c’est ce que tes amis saisissent.`)
+          this.journal(t('percage.percage-billet-c-est-ce', { v1: this.billet }))
         }
         this.#noterEndroit(message.vu)
         return true
@@ -197,7 +203,7 @@ class Percage {
         const raison = String(message.raison ?? 'sans raison')
         if (this.refus !== raison) {
           this.refus = raison
-          this.journal(`perçage refusé par le rendez-vous : ${EXPLICATIONS[raison] ?? raison}`)
+          this.journal(t('percage.percage-refuse-par-le-rendez', { v1: EXPLICATIONS[raison] ?? raison }))
         }
 
         /*
@@ -226,10 +232,7 @@ class Percage {
         */
         if (Number.isInteger(message.s) && !this.relais.has(message.s)) {
           this.relais.add(message.s)
-          this.journal(
-            `per\u00e7age impossible pour un joueur : il passe par le relais du rendez-vous ` +
-              `(session ${message.s}). Sa latence sera plus haute.`,
-          )
+          this.journal(t('percage.relais-ouvert', { v1: message.s }))
         }
         return true
       }
@@ -265,10 +268,7 @@ class Percage {
     */
     if (!this.symetrique && this.portsVus.size >= PORTS_AVANT_VERDICT) {
       this.symetrique = true
-      this.journal(
-        'perçage : ta box change de port à chaque envoi (NAT symétrique). ' +
-          'Tes amis ne pourront pas entrer sans redirection de port.',
-      )
+      this.journal(t('percage.symetrique'))
     }
   }
 

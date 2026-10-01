@@ -1,5 +1,24 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { T, langueValide, consoleEn } = require('./langues')
+
+/*
+  ⚠️ CE FICHIER NE PEUT PAS LIRE SA PROPRE CONFIGURATION. Il la fabrique : s'il
+     se demandait a lui-meme la langue, il se requerrait lui-meme et Node lui
+     rendrait un objet a moitie construit. Ses avertissements sortent PENDANT
+     la lecture des reglages, donc avant qu'il y ait une configuration -- on
+     lit donc la variable directement, une seule fois, ici.
+*/
+const LANGUE_AU_DEMARRAGE = langueValide(process.env.LANGUE || process.env.LANG)
+const t = (cle, valeurs) => T(LANGUE_AU_DEMARRAGE, cle, valeurs)
+
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  CONFIGURATION — lue une fois, validee une fois
@@ -55,7 +74,7 @@ const DEPUIS_FICHIER = (() => {
       table[m[1]] = m[2].replace(/^["']|["']$/g, '').trim().slice(0, 512)
     }
     if (Object.keys(table).length) {
-      avertissements.push(`${Object.keys(table).length} reglage(s) lu(s) dans ${chemin}.`)
+      avertissements.push(t('config.reglage-s-lu-s-dans', { v1: Object.keys(table).length, v2: chemin }))
     }
   } catch {
     /* pas de fichier : c'est le cas normal */
@@ -76,12 +95,12 @@ function entier(nom, defaut, min, max) {
 
   const v = Number.parseInt(brut, 10)
   if (!Number.isFinite(v)) {
-    avertissements.push(`${nom} = « ${brut} » n'est pas un nombre, on garde ${defaut}.`)
+    avertissements.push(t('config.n-est-pas-un-nombre', { v1: nom, v2: brut, v3: defaut }))
     return defaut
   }
   if (v < min || v > max) {
     const borne = Math.min(Math.max(v, min), max)
-    avertissements.push(`${nom} = ${v} est hors des bornes [${min}, ${max}], ramene a ${borne}.`)
+    avertissements.push(t('config.est-hors-des-bornes-ramene', { v1: nom, v2: v, v3: min, v4: max, v5: borne }))
     return borne
   }
   return v
@@ -118,7 +137,7 @@ const config = {
    */
   portHttp: entier('HTTP_PORT', 0, 0, 65535) || entier('PORT', 7777, 1, 65535) + 1,
 
-  nom: texte('SERVER_NAME', 'Serveur Voyage', 60),
+  nom: texte('SERVER_NAME', t('config.serveur-voyage'), 60),
 
   /**
    * ⚠️ QUATRE JOUEURS, PAS QUARANTE. Le jeu est pense pour la solitude ; la
@@ -189,6 +208,14 @@ const config = {
        maison, c'est rendre publique son adresse domestique. On ne le fait
        jamais a la place du proprietaire.
   */
+  /**
+   * La langue de la CONSOLE et des journaux.
+   *
+   * ⚠️ ELLE NE DECIDE PAS DE CE QUE LISENT LES JOUEURS. Chacun annonce la
+   *    sienne a l'arrivee, et le serveur lui parle dedans. Celle-ci ne
+   *    concerne que l'hote, devant sa console.
+   */
+  langue: langueValide(texte('LANGUE', '', 8) || process.env.LANG || 'fr'),
   annuaire: drapeau('ANNUAIRE', false),
   annuaireUrl: texte('ANNUAIRE_URL', 'https://caretakermp.symbioseheritage.ca/api/annuaire', 256),
   annuaireCle: texte('ANNUAIRE_CLE', '', 128),
@@ -244,5 +271,13 @@ const config = {
   /** Ce que le fichier de reglages a fourni, pour le diagnostic. */
   reglagesDeFichier: Object.keys(DEPUIS_FICHIER),
 }
+
+/*
+  ⚠️ ON POSE LA LANGUE DE LA CONSOLE UNE FOIS, ICI, APRES L'AVOIR LUE. Avant
+     cette ligne, les avertissements de lecture des réglages sortent dans la
+     langue du système — c'est le mieux qu'on puisse faire : ils sont écrits
+     pendant qu'on découvre encore ce que l'hôte a choisi.
+*/
+consoleEn(config.langue)
 
 module.exports = config

@@ -45,7 +45,7 @@ function lireDuree(texte) {
 }
 
 function decrireDuree(ms) {
-  if (!ms) return 'définitif'
+  if (!ms) return t('moderation.definitif')
   if (ms < 60_000) return `${Math.round(ms / 1000)} s`
   if (ms < 3_600_000) return `${Math.round(ms / 60_000)} min`
   if (ms < 86_400_000) return `${Math.round(ms / 360_000) / 10} h`
@@ -87,7 +87,7 @@ class Moderation {
         })
       }
       this.#purger()
-      if (this.sanctions.length) this.journal(`${this.sanctions.length} sanction(s) en vigueur.`)
+      if (this.sanctions.length) this.journal(t('moderation.sanction-s-en-vigueur', { v1: this.sanctions.length }))
     } catch {
       /* premier demarrage */
     }
@@ -103,7 +103,7 @@ class Moderation {
       this.sale = false
       return true
     } catch (e) {
-      this.journal(`sanctions non enregistrées : ${e.message}`)
+      this.journal(t('moderation.sanctions-non-enregistrees', { v1: e.message }))
       return false
     }
   }
@@ -217,13 +217,13 @@ class Moderation {
       .map((s) => ({
         genre: s.genre,
         cible: s.empreinte || s.adresse,
-        parQuoi: s.empreinte ? 'identité' : 'adresse',
+        parQuoi: s.empreinte ? t('moderation.identite') : 'adresse',
         nom: s.nom,
         raison: s.raison,
         par: s.par,
         pose: s.pose,
         jusqua: s.jusqua,
-        reste: s.jusqua ? decrireDuree(s.jusqua - t) : 'définitif',
+        reste: s.jusqua ? decrireDuree(s.jusqua - t) : t('moderation.definitif'),
       }))
   }
 

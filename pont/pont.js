@@ -283,6 +283,12 @@ function deposerPourLeJeu(tick, force = false) {
       `${plaques.vie ? 1 : 0} ${plaques.portee}`,
   )
   lignes.push(`debug ${debug ? 1 : 0}`)
+  /*
+    ⚠️ LA LANGUE PART A CHAQUE LOT, PAS UNE SEULE FOIS AU DEMARRAGE. Le mod
+       peut etre recharge, le jeu relance, le pont reconnecte : un reglage
+       envoye une fois est un reglage perdu la fois d'apres.
+  */
+  lignes.push(`langue ${langue}`)
 
   if (rendezVous && rendezVous.pos) {
     const r = rendezVous
@@ -724,8 +730,14 @@ function seConnecter() {
     t: 'bonjour',
     nom: nomJoueur,
     protocole: PROTOCOLE,
-    version: '0.6.4',
+    version: require('../package.json').version,
     motDePasse,
+    /*
+      ⚠️ LA LANGUE DU LANCEUR PART AVEC LE BONJOUR. C'est elle qui decide dans
+         quelle langue le SERVEUR nous parlera -- trois joueurs sur la meme
+         partie peuvent la lire en trois langues.
+    */
+    langue,
     capacites: ['anim', 'nameplate', 'pnj', 'inv', 'evenement', 'temps', 'reseau'],
   }
   if (clePublique && signature && identiteTs) {

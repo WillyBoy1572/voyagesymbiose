@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 const crypto = require('node:crypto')
 
 /**
@@ -168,19 +177,14 @@ class RendezVous {
     this.aveugle = true
     if (!this.plainteFaite) {
       this.plainteFaite = true
-      this.journal(
-        'rendez-vous désactivé : ce serveur est annoncé public mais voit ses visiteurs ' +
-          'arriver d’une adresse privée. Quelque chose réécrit la source en chemin ' +
-          '(tunnel, proxy, NAT du fournisseur) : les adresses apprises ici seraient ' +
-          'inutilisables. Il faut un point de rendez-vous joint en direct.',
-      )
+      this.journal(t('rendezvous.aveugle'))
     }
     return false
   }
 
   demarrer() {
     if (!this.actif) return false
-    this.journal('point de rendez-vous actif : les hôtes derrière une box peuvent s’y annoncer.')
+    this.journal(t('rendezvous.point-de-rendez-vous-actif'))
     return true
   }
 

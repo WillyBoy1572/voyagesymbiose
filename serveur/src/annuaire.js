@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 const http = require('node:http')
 const https = require('node:https')
 const { URL } = require('node:url')
@@ -90,7 +99,7 @@ class Annuaire {
   demarrer() {
     if (!this.actif) {
       // On le dit : « pourquoi mon serveur n'apparait pas » est une vraie question.
-      this.journal('annuaire : éteint (ANNUAIRE=1 et ANNUAIRE_URL pour l’allumer).')
+      this.journal(t('annuaire.annuaire-eteint-annuaire-1-et'))
       return false
     }
     this.journal(`annuaire : annonces vers ${this.url}`)
@@ -151,7 +160,7 @@ class Annuaire {
         */
         if (this.echecs === ECHECS_AVANT_DE_PARLER && !this.plainteFaite) {
           this.plainteFaite = true
-          this.journal(`annuaire injoignable depuis ${this.echecs} essais (${erreur.message}) — on réessaiera.`)
+          this.journal(t('annuaire.annuaire-injoignable-depuis-essais-on', { v1: this.echecs, v2: erreur.message }))
         }
         if (this.echecs >= ECHECS_AVANT_PAUSE) this.pause = true
         return
@@ -159,7 +168,7 @@ class Annuaire {
 
       // On ne parle de la reprise que si on avait parle de la panne.
       if (this.plainteFaite) {
-        this.journal('annuaire : de nouveau joignable.')
+        this.journal(t('annuaire.annuaire-de-nouveau-joignable'))
         this.plainteFaite = false
       }
       this.echecs = 0
@@ -175,7 +184,7 @@ class Annuaire {
     try {
       adresse = new URL(this.url)
     } catch {
-      return fini(new Error('ANNUAIRE_URL invalide'))
+      return fini(new Error(t('annuaire.annuaire-url-invalide')))
     }
 
     const transport = adresse.protocol === 'https:' ? https : http
@@ -213,7 +222,7 @@ class Annuaire {
         })
         reponse.on('end', () => {
           if (reponse.statusCode !== 200) {
-            return fini(new Error(`HTTP ${reponse.statusCode}`))
+            return fini(new Error(t('annuaire.http', { v1: reponse.statusCode })))
           }
           try {
             fini(null, JSON.parse(Buffer.concat(morceaux).toString('utf8')))
@@ -224,7 +233,7 @@ class Annuaire {
       },
     )
 
-    requete.on('timeout', () => requete.destroy(new Error('délai dépassé')))
+    requete.on('timeout', () => requete.destroy(new Error(t('annuaire.delai-depasse'))))
     requete.on('error', (e) => fini(e))
     requete.end(charge)
   }

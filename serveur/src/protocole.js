@@ -159,6 +159,13 @@ function valider(brut) {
         sig: opaque(brut.sig, LIMITES.signature),
         /** Jeton rendu au depart : permet de reprendre sa place et son etat. */
         reprise: opaque(brut.reprise, LIMITES.cle),
+        /*
+          ⚠️ LA LANGUE EST CELLE DU LANCEUR, PAS CELLE DU SERVEUR. Trois personnes
+             peuvent lire la meme partie en trois langues : le serveur traduit
+             ses messages pour chacune. Absente, c'est le francais -- et un
+             client plus ancien qui ne l'envoie pas reste parfaitement servi.
+        */
+        langue: chaine(brut.langue, 8) ?? '',
         /** Ce que ce client sait faire : le serveur ne lui envoie pas le reste. */
         capacites: Array.isArray(brut.capacites)
           ? brut.capacites.slice(0, 16).map((c) => chaine(c, 24)).filter(Boolean)

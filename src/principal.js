@@ -902,6 +902,8 @@ ipcMain.handle(
     const etat = await heberger.demarrer({
       ...reglages,
       pseudo: (r.nomJoueur || '').trim() || 'hôte',
+      // La console du serveur suit la langue choisie dans le lanceur.
+      langue: r.langue || 'fr',
       dossierSauvegardes: r.dossierSauvegardes,
       empreinte: moi ? moi.empreinte : null,
     })

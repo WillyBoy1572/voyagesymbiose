@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  INVENTAIRE — ce que chacun porte, et le coffre commun
@@ -95,7 +104,7 @@ class Inventaires {
       for (const m of (brut.mouvements || []).slice(-JOURNAL_MAX)) {
         if (m && typeof m.objet === 'string') this.mouvements.push(m)
       }
-      if (this.coffre.size) this.journal(`coffre commun : ${this.coffre.size} espèce(s) d’objet.`)
+      if (this.coffre.size) this.journal(t('inventaire.coffre-commun-espece-s-d', { v1: this.coffre.size }))
     } catch {
       /* premier demarrage */
     }
@@ -119,7 +128,7 @@ class Inventaires {
       this.sale = false
       return true
     } catch (e) {
-      this.journal(`coffre non enregistré : ${e.message}`)
+      this.journal(t('inventaire.coffre-non-enregistre', { v1: e.message }))
       return false
     }
   }

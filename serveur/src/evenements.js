@@ -1,5 +1,14 @@
 'use strict'
 
+/*
+  ⚠️ ICI, `t` PARLE LA LANGUE DU SERVEUR. Ces textes-la vont dans la console
+     et dans les journaux : c'est l'hote qui les lit, et il n'y en a qu'un.
+     Les messages destines aux JOUEURS, eux, passent par `messageA` ou
+     `annoncer` avec une cle nue -- chacun les recoit dans la sienne.
+*/
+const { surLaConsole: t } = require('./langues')
+
+
 /**
  * ═══════════════════════════════════════════════════════════════════════════
  *  EVENEMENTS — ce qui se produit une fois, et que les autres doivent voir
@@ -38,7 +47,7 @@ const GENRES = {
   machine: { portee: 10000, texte: null },
   conteneur: { portee: 6000, texte: null },
   /** Evenements forts : audibles de loin. */
-  alarme: { portee: 40000, texte: 'Une alarme sonne.' },
+  alarme: { portee: 40000, texte: t('evenements.une-alarme-sonne') },
   explosion: { portee: 40000, texte: null },
   tir: { portee: 20000, texte: null },
   degat: { portee: 8000, texte: null },
@@ -147,11 +156,11 @@ class Evenements {
   static texte(evenement) {
     const g = GENRES[evenement.genre]
     if (!g) return null
-    if (evenement.genre === 'geste') return `${evenement.de} fait « ${evenement.valeur} ».`
+    if (evenement.genre === 'geste') return t('evenements.fait', { v1: evenement.de, v2: evenement.valeur })
     if (evenement.genre === 'ping') {
-      return evenement.valeur ? `${evenement.de} marque : ${evenement.valeur}` : `${evenement.de} marque un point.`
+      return evenement.valeur ? `${evenement.de} marque : ${evenement.valeur}` : t('evenements.marque-un-point', { v1: evenement.de })
     }
-    if (evenement.genre === 'mort') return `${evenement.de} est tombé.`
+    if (evenement.genre === 'mort') return t('evenements.est-tombe', { v1: evenement.de })
     return g.texte
   }
 
