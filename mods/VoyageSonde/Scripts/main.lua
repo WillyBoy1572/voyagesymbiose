@@ -147,19 +147,39 @@ local function sonder()
     ]]
     noter("")
     noter("--- Fonctions de sauvegarde / chargement ---")
-    local interessant = { "save", "load", "world", "session", "travel", "quit", "continue", "newgame" }
+    --[[
+      ATTENTION : ON CHERCHE AUSSI LES VERBES DU JEU, PAS SEULEMENT LA
+      SAUVEGARDE. Une fonction nommee `OnDeath`, `AddItem` ou `PlaceStructure`
+      est exactement ce qu il faudra accrocher pour repliquer une mort, un
+      inventaire ou une construction. Les deviner serait une perte de temps ;
+      les lire coute un parcours deja fait.
+    ]]
+    local interessant = {
+        -- sauvegarde et session
+        "save", "load", "world", "session", "travel", "quit", "continue", "newgame",
+        -- vie et mort
+        "death", "die", "kill", "damage", "health", "respawn", "revive", "hurt",
+        -- inventaire et objets
+        "item", "inventory", "pickup", "drop", "equip", "craft", "stack", "slot",
+        -- armes
+        "weapon", "fire", "shoot", "reload", "ammo", "aim",
+        -- construction
+        "build", "place", "construct", "destroy", "repair", "upgrade",
+        -- interaction
+        "interact", "use", "open", "close", "toggle", "activate", "power",
+    }
     local vuesF, compteF = {}, 0
 
     local function fouiller(objet, etiquette)
         if not estValide(objet) then return end
         local classe = sur(function() return objet:GetClass() end, nil)
-        while estValide(classe) and compteF < 120 do
+        while estValide(classe) and compteF < 260 do
             local nomClasse = sur(function() return classe:GetFName():ToString() end, "?")
             -- On s'arrete aux classes du moteur : elles n'ont rien de propre au jeu.
             if nomClasse == "Object" or nomClasse == "Actor" then break end
 
             local enfant = sur(function() return classe.Children end, nil)
-            while estValide(enfant) and compteF < 120 do
+            while estValide(enfant) and compteF < 260 do
                 local nf = sur(function() return enfant:GetFName():ToString() end, nil)
                 if nf then
                     local bas = nf:lower()
@@ -208,40 +228,55 @@ local function sonder()
          « repli ».
     ]]
     --[[
-      RECONNAISSANCE DES PNJ ET DES OBJETS ACTIONNABLES (pour la 0.6.3).
+      RECENSEMENT DU MONDE CHARGE (pour la 0.6.3 et la suite).
 
       ATTENTION : ON NE REPLIQUERA PAS CE QU ON N A PAS IDENTIFIE. Synchroniser
-      un monstre demande de savoir quelle classe il porte, ou il est, et ce qui
-      marque sa mort. On liste donc ce qui existe VRAIMENT dans la partie
-      chargee, au lieu de deviner des noms.
+      un monstre, une arme ou un mur demande de savoir quelle classe il porte,
+      quelles proprietes il expose et ce qui marque son changement d etat. On
+      liste donc ce qui existe VRAIMENT dans la partie chargee.
 
-      ATTENTION : ON COMPTE PAR CLASSE, ON NE LISTE PAS CHAQUE ACTEUR. Un monde
-      charge contient des dizaines de milliers d acteurs ; ce qui nous interesse
-      c est la liste des classes et combien il y en a de chaque.
+      ATTENTION : UN SEUL PARCOURS DES ACTEURS, ET DES COMPTES PAR CLASSE. Un
+      monde charge contient des dizaines de milliers d acteurs ; les lister un
+      par un donnerait un fichier illisible et ferait ramer le jeu. On compte,
+      on classe, on garde un exemple de chaque.
+
+      ATTENTION : TOUT EST BORNE. Chaque liste a un plafond : une sonde qui
+      bloque le chargement du jeu ne sert a personne.
     ]]
     noter("")
-    noter("--- Creatures et objets actionnables reperes ---")
+    noter("--- Recensement du monde ---")
 
     local familles = {
-        pnj = { "character", "enemy", "monster", "creature", "ai", "npc", "zombie", "drone", "bot" },
-        actionnable = { "door", "switch", "lever", "valve", "button", "terminal", "station",
-                        "machine", "generator", "container", "storage", "interact" },
+        creature     = { "character", "enemy", "monster", "creature", "npc", "zombie",
+                         "drone", "bot", "spawner", "swarm", "hostile", "predator" },
+        arme         = { "weapon", "gun", "rifle", "pistol", "ammo", "projectile", "bullet",
+                         "melee", "blade", "turret", "explosive", "grenade" },
+        construction = { "build", "construct", "place", "blueprint", "structure", "foundation",
+                         "wall", "floor", "roof", "deploy", "snap", "module", "piece" },
+        actionnable  = { "door", "switch", "lever", "valve", "button", "terminal", "station",
+                         "machine", "generator", "cable", "pipe", "panel", "console", "interact" },
+        inventaire   = { "inventory", "item", "slot", "container", "storage", "chest",
+                         "crate", "loot", "pickup", "resource", "craft" },
+        vehicule     = { "vehicle", "boat", "ship", "raft", "submarine", "drive", "seat" },
+        monde        = { "weather", "time", "daynight", "tide", "wave", "ocean", "island" },
     }
 
-    local comptes, classes = {}, {}
+    local comptes, exemples = {}, {}
+    local census = {}
     local tousLesActeurs = sur(function() return FindAllOf("Actor") end, {}) or {}
     noter("  acteurs parcourus : " .. tostring(#tousLesActeurs))
 
     for _, a in ipairs(tousLesActeurs) do
         local nomC = sur(function() return a:GetClass():GetFName():ToString() end, nil)
         if nomC then
+            census[nomC] = (census[nomC] or 0) + 1
             local bas = nomC:lower()
             for famille, mots in pairs(familles) do
                 for _, mot in ipairs(mots) do
                     if bas:find(mot, 1, true) then
                         local cle = famille .. "|" .. nomC
                         comptes[cle] = (comptes[cle] or 0) + 1
-                        classes[cle] = a
+                        if exemples[cle] == nil then exemples[cle] = a end
                         break
                     end
                 end
@@ -249,19 +284,95 @@ local function sonder()
         end
     end
 
-    local listees = 0
-    for cle, combien in pairs(comptes) do
-        if listees >= 30 then break end
-        listees = listees + 1
-        local famille, nomC = cle:match("^(%a+)|(.+)$")
-        noter(string.format("  [%s] %-44s x%d", famille, nomC, combien))
-        local exemple = classes[cle]
-        if exemple and listees <= 6 then
-            noter("      heritage : " .. hierarchie(exemple))
-            noter("      position : " .. vecteur(sur(function() return exemple:K2_GetActorLocation() end, nil)))
+    -- Par famille, pour que le rapport se lise.
+    for famille in pairs(familles) do
+        local lignesF = {}
+        for cle, combien in pairs(comptes) do
+            local f, nomC = cle:match("^(%a+)|(.+)$")
+            if f == famille then lignesF[#lignesF + 1] = { nomC, combien, exemples[cle] } end
+        end
+        if #lignesF > 0 then
+            table.sort(lignesF, function(x, y) return x[2] > y[2] end)
+            noter("")
+            noter("  [" .. famille:upper() .. "]")
+            for k = 1, math.min(#lignesF, 14) do
+                noter(string.format("    %-46s x%d", lignesF[k][1], lignesF[k][2]))
+            end
+            -- Un exemple detaille par famille : sa hierarchie dit quoi accrocher.
+            local ex = lignesF[1][3]
+            if ex then
+                noter("    exemple : " .. hierarchie(ex))
+                noter("    position: " .. vecteur(sur(function() return ex:K2_GetActorLocation() end, nil)))
+            end
         end
     end
-    if listees == 0 then noter("  (aucune classe reconnue -- il faudra elargir les mots-cles)") end
+
+    --[[
+      Les classes les plus nombreuses, meme sans mot-cle. C est souvent la que
+      se cache ce qu on cherche : un jeu nomme rarement ses classes comme on
+      s y attend.
+    ]]
+    noter("")
+    noter("  [LES PLUS NOMBREUSES, tous noms confondus]")
+    local tri = {}
+    for nomC, combien in pairs(census) do tri[#tri + 1] = { nomC, combien } end
+    table.sort(tri, function(x, y) return x[2] > y[2] end)
+    for k = 1, math.min(#tri, 25) do
+        noter(string.format("    %-46s x%d", tri[k][1], tri[k][2]))
+    end
+
+    --[[
+      LES COMPOSANTS ET LES PROPRIETES DU PION.
+
+      ATTENTION : C EST ICI QU ON APPRENDRA QUOI REPLIQUER. Sante, faim,
+      oxygene, inventaire, equipement : si le jeu les porte sur le pion, leurs
+      noms apparaissent ci-dessous. Sans cette liste on devinerait.
+    ]]
+    noter("")
+    noter("--- Composants portes par le pion ---")
+    local composants = sur(function() return pion:K2_GetComponentsByClass(StaticFindObject("/Script/Engine.ActorComponent")) end, nil)
+    if composants and #composants > 0 then
+        for k = 1, math.min(#composants, 30) do
+            noter("  " .. (sur(function() return composants[k]:GetFName():ToString() end, "?"))
+                .. "  <" .. (sur(function() return composants[k]:GetClass():GetFName():ToString() end, "?")) .. ">")
+        end
+    else
+        noter("  (liste indisponible par K2_GetComponentsByClass)")
+    end
+
+    noter("")
+    noter("--- Proprietes du pion, du controleur et de l etat de partie ---")
+
+    local function proprietes(objet, etiquette, plafond)
+        if not estValide(objet) then
+            noter("  " .. etiquette .. " : (absent)")
+            return
+        end
+        local classe = sur(function() return objet:GetClass() end, nil)
+        local poses, garde = 0, 0
+        while estValide(classe) and poses < plafond and garde < 10 do
+            local nomClasse = sur(function() return classe:GetFName():ToString() end, "?")
+            if nomClasse == "Object" or nomClasse == "Actor" then break end
+            -- UE5 range les proprietes dans `ChildProperties`, les fonctions dans `Children`.
+            local p = sur(function() return classe.ChildProperties end, nil)
+            while estValide(p) and poses < plafond do
+                local np = sur(function() return p:GetFName():ToString() end, nil)
+                if np then
+                    poses = poses + 1
+                    noter(string.format("  %s %-34s (%s)", etiquette, np, nomClasse))
+                end
+                p = sur(function() return p.Next end, nil)
+            end
+            classe = sur(function() return classe.SuperStruct end, nil)
+            garde = garde + 1
+        end
+        if poses == 0 then noter("  " .. etiquette .. " : (aucune propriete lisible)") end
+    end
+
+    proprietes(pion, "[pion]", 60)
+    proprietes(pc, "[controleur]", 25)
+    proprietes(sur(function() return FindFirstOf("PlayerState") end, nil), "[etat joueur]", 25)
+    proprietes(sur(function() return FindFirstOf("GameStateBase") end, nil), "[etat partie]", 25)
 
     noter("")
     noter("--- Animations : la vitesse est-elle accessible ? ---")
