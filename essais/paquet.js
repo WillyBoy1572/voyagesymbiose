@@ -168,5 +168,19 @@ if (installeurs[0]) {
   console.log(`\n  ${installeurs[0]} — ${mo.toFixed(0)} Mo`)
 }
 
+/*
+  ⚠️ LA SONDE MAX NE DOIT JAMAIS PARTIR DANS LE PAQUET PUBLIC. Elle accroche
+     une vingtaine de fonctions du jeu et écrit en continu : chez un joueur,
+     c'est un fichier de plusieurs mégaoctets qui grossit dans son dossier de
+     jeu sans qu'il l'ait demandé. `outils/batir-perso.js` la copie le temps
+     d'une construction et la retire dans un `finally` — ce banc est ce qui
+     rattrape le jour où ce `finally` ne s'exécute pas.
+*/
+ok(
+  !liste.some((f) => f.includes('VoyageSondeMax')),
+  'la sonde max n’est PAS dans le paquet public',
+  liste.filter((f) => f.includes('VoyageSondeMax')).join(', '),
+)
+
 console.log('\n' + (echecs ? `${echecs} ÉCHEC(S)` : 'TOUT PASSE'))
 process.exit(echecs ? 1 : 0)

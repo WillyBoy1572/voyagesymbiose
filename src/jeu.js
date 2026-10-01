@@ -185,7 +185,62 @@ function copierDossier(source, cible) {
  *    On l'installe, on le retire, on ne touche a rien de plus — ni aux mods
  *    des autres auteurs, ni a ceux livres avec UE4SS.
  */
-const NOS_MODS = ['VoyageLien', 'VoyageSonde']
+/** Les mods livres a tout le monde. */
+const MODS_PUBLICS = ['VoyageLien', 'VoyageSonde']
+
+/**
+ * La sonde max : un relevé profond qui accroche une vingtaine de fonctions du
+ * jeu pour enregistrer ce qu'elles reçoivent.
+ *
+ * ⚠️ ELLE N'EST PAS DANS LE LANCEUR PUBLIC, ET CE N'EST PAS UN OUBLI. Elle
+ *    écrit en continu, elle est bavarde, et elle n'a d'intérêt que pour celui
+ *    qui lit le fichier. La construction décide : si `mods/VoyageSondeMax`
+ *    n'est pas dans le paquet, cette ligne ne trouve rien et rien ne se pose.
+ *    Le banc `essais/paquet.js` vérifie qu'elle est bien absente du public.
+ */
+const MOD_SONDE_MAX = 'VoyageSondeMax'
+
+/** Ce qu'on installe vraiment : les mods publics, plus la sonde max si elle est là. */
+function nosMods(sourceMods) {
+  if (!sourceMods) return MODS_PUBLICS
+  const max = path.join(sourceMods, MOD_SONDE_MAX, 'Scripts', 'main.lua')
+  return fs.existsSync(max) ? [...MODS_PUBLICS, MOD_SONDE_MAX] : MODS_PUBLICS
+}
+
+/*
+  ⚠️ LA DESINSTALLATION, ELLE, CONNAIT LES TROIS. On retire ce qu'on a pu poser
+     un jour, pas seulement ce que cette version-ci pose : quelqu'un qui passe du
+     lanceur personnel au public ne doit pas garder une sonde qui écrit dans son
+     dossier de jeu pour toujours.
+*/
+const NOS_MODS = [...MODS_PUBLICS, MOD_SONDE_MAX]
+
+/**
+ * Le rapport de la sonde max, s'il existe. `null` sinon.
+ *
+ * ⚠️ ON CHERCHE AUX DEUX ENDROITS. UE4SS change de dossier de travail selon
+ *    la version : un rapport écrit à côté de l’exécutable et un rapport écrit
+ *    dans `ue4ss/` sont le même rapport, et chercher au seul endroit qu’on
+ *    connaissait faisait conclure à tort que la sonde n’avait rien écrit.
+ */
+function rapportSondeMax(dossierJeu) {
+  const bin = dossierBinaires(dossierJeu)
+  if (!bin) return null
+  for (const c of [
+    path.join(bin, 'ue4ss', 'VoyageSondeMax.txt'),
+    path.join(bin, 'VoyageSondeMax.txt'),
+  ]) {
+    try {
+      if (fs.existsSync(c)) {
+        const st = fs.statSync(c)
+        return { chemin: c, octets: st.size, date: st.mtime.toISOString() }
+      }
+    } catch {
+      /* illisible : on essaie le suivant */
+    }
+  }
+  return null
+}
 
 /** Depose quand c'est NOUS qui avons installe UE4SS, et pas le joueur. */
 const MARQUE_UE4SS = '.voyage-a-pose-ue4ss'
@@ -264,7 +319,7 @@ function installer({ dossierJeu, sourceUe4ss, sourceMods }) {
   const cibleMods = path.join(bin, 'ue4ss', 'Mods')
   fs.mkdirSync(cibleMods, { recursive: true })
   const poses = []
-  for (const nom of NOS_MODS) {
+  for (const nom of nosMods(sourceMods)) {
     const source = path.join(sourceMods, nom)
     if (!fs.existsSync(source)) continue
     copierDossier(source, path.join(cibleMods, nom))
@@ -453,6 +508,8 @@ function lancerJeu(dossierJeu) {
 }
 
 module.exports = {
+  rapportSondeMax,
+  MOD_SONDE_MAX,
   APPID,
   POINTS_ACCROCHE,
   accrocheActuelle,
