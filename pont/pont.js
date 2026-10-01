@@ -72,6 +72,8 @@ if (billet && rendezVousAdresse) {
 let hoteTrouve = !billet
 let tentativesRdv = 0
 let tentativesDirect = 0
+/** Le dernier aller-retour mesure. `null` tant qu'on n'a pas eu de reponse. */
+let dernierRtt = null
 const nomJoueur = argument('nom', os.userInfo().username || 'Joueur').slice(0, 24)
 const motDePasse = argument('motdepasse', '')
 
@@ -530,6 +532,18 @@ socket.on('message', (tampon) => {
       log(M('rdvRefus', m.raison ?? '?'))
       break
 
+    case 'pong': {
+      /*
+        ⚠️ DEPART ET RETOUR SUR LA MEME HORLOGE : c'est la seule mesure qui
+           veut dire quelque chose. Le `ts` est le notre, renvoye tel quel.
+      */
+      if (Number.isFinite(m.ts) && m.ts > 0) {
+        const mesure = Date.now() - m.ts
+        if (mesure >= 0 && mesure < 600000) dernierRtt = mesure
+      }
+      break
+    }
+
     case 'rdv-salut':
       // L'hote a perce vers nous : le chemin est ouvert, il n'y a rien a faire.
       break
@@ -807,7 +821,12 @@ setInterval(() => {
   }
 
   if (!jeton) return seConnecter()
-  envoyer({ t: 'ping', ts: Date.now() })
+  /*
+    ⚠️ C'EST NOUS QUI MESURONS L'ALLER-RETOUR. Le serveur ne peut pas : il
+       devrait soustraire notre horloge de la sienne, et deux machines ne sont
+       jamais a la meme heure. On envoie donc la mesure du tour precedent.
+  */
+  envoyer({ t: 'ping', ts: Date.now(), rtt: dernierRtt })
   if (derniereReponse && Date.now() - derniereReponse > 15000) {
     log(M('perdu'))
     jeton = null

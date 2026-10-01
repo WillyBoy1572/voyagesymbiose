@@ -58,6 +58,7 @@ local INTERVALLE_MS = 15000
 
 local essais = 0
 local pret = false
+local balayageEnCours = false
 local lignes = {}
 local prises = {}
 
@@ -71,13 +72,34 @@ local function sur(f, repli)
     return repli
 end
 
+--[[
+  ATTENTION : ON AJOUTE, ON NE REECRIT PAS. Reecrire le fichier entier a chaque
+  fois coute le carre du nombre de lignes : avec trente mille lignes et un appel
+  tous les cinq cents, c est une centaine de megaoctets ecrits pour un seul
+  releve, sur le fil du jeu. Le jeu gelait, et Windows le declarait
+  << ne repond plus >>. On ne pose donc que ce qui est nouveau.
+]]
+local ecrites = 0
+
 local function ecrire()
-    local f = io.open(FICHIER, "w")
+    if ecrites >= #lignes then return true end
+    local f = io.open(FICHIER, "a")
     if not f then return false end
-    f:write(table.concat(lignes, "\n"))
-    f:write("\n")
+    for i = ecrites + 1, #lignes do
+        f:write(lignes[i])
+        f:write("\n")
+    end
     f:close()
+    ecrites = #lignes
     return true
+end
+
+--- Repart d un fichier vide. Sert a F8, qui refait tout.
+local function vider()
+    local f = io.open(FICHIER, "w")
+    if f then f:close() end
+    lignes = {}
+    ecrites = 0
 end
 
 --[[
@@ -590,11 +612,267 @@ end
 --  La sonde
 -- ═══════════════════════════════════════════════════════════════════════════
 
+--[[
+  LE BALAYAGE COMPLET DU JEU.
+
+  ATTENTION : IL NE TOURNE QUE SUR DEMANDE (F8). Il parcourt des centaines de
+  milliers d objets sur le fil du jeu ; lance tout seul au chargement d une
+  partie, il la gele assez longtemps pour que Windows la declare << ne repond
+  plus >>. Le joueur appuie quand il est immobile, et il sait pourquoi ca
+  saccade.
+]]
+local function balayerToutLeJeu()
+    -- == 8. TOUT LE JEU, PAS SEULEMENT LE MONDE CHARGE ==================
+    titre("TOUT CE QUI EXISTE EN MEMOIRE")
+    noter("Le monde charge dit ce qui est POSE. Le registre des objets dit ce")
+    noter("qui EXISTE. Au debut d une partie le premier est presque vide et le")
+    noter("second est deja plein : c est la que vivent les definitions d objets,")
+    noter("d outils et de pieces, qu on ait pose quelque chose ou non.")
+    noter("")
+    noter("Ce balayage prend une dizaine de secondes. Le jeu peut saccader.")
+
+    --[[
+      ATTENTION : `ForEachUObject` PARCOURT TOUT CE QUE LE MOTEUR A EN MEMOIRE,
+      classes comprises -- des centaines de milliers d entrees. On compte tout,
+      on en ECRIT peu, et on garde de cote celles qui nous interessent.
+
+      ATTENTION : SI CETTE FONCTION N EXISTE PAS DANS CETTE VERSION D UE4SS, on
+      le DIT. Un balayage qui ne trouve rien et un balayage qui n a pas eu lieu
+      se ressemblent beaucoup dans un fichier, et seul le second se repare.
+    ]]
+    local MOTS_OBJETS = {
+        "item", "tool", "weapon", "gun", "axe", "knife", "pickaxe", "hammer",
+        "resource", "material", "ore", "scrap", "metal", "wood", "plank", "fiber",
+        "food", "drink", "water", "fuel", "battery", "cell", "ammo", "medkit",
+        "craft", "recipe", "blueprint", "schematic", "loot", "pickup", "drop",
+        "equip", "armor", "suit", "helmet", "backpack", "bag", "container",
+        "consumable", "seed", "plant", "fish", "component", "part", "module",
+        "prop", "placeable", "buildable", "deployable", "structure", "wall",
+        "floor", "roof", "door", "hatch", "window", "ramp", "stair", "foundation",
+        "pillar", "beam", "cable", "wire", "pipe", "panel", "solar", "generator",
+        "grinder", "bench", "forge", "turbine", "diesel", "tank", "storage",
+    }
+
+    local parType = {}
+    local classesInteressantes = {}
+    local tablesDeDonnees = {}
+    local toutesClassesBP = {}
+    local vusUObject = 0
+    local balayageFait = false
+
+    balayageFait = sur(function()
+        ForEachUObject(function(objet)
+            vusUObject = vusUObject + 1
+            local nomC = sur(function() return objet:GetClass():GetFName():ToString() end, nil)
+            if nomC == nil then return end
+            parType[nomC] = (parType[nomC] or 0) + 1
+
+            local nomO = sur(function() return objet:GetFName():ToString() end, "")
+            local bas = nomO:lower()
+
+            -- Les tables de donnees : c est la que vivent les listes d objets.
+            if nomC == "DataTable" then
+                tablesDeDonnees[#tablesDeDonnees + 1] = objet
+                return
+            end
+
+            --[[
+              Une classe Blueprint porte le suffixe `_C`. Toutes les definitions
+              d objets du jeu en sont, et elles sont en memoire bien avant qu on
+              en pose une seule.
+            ]]
+            if nomC == "BlueprintGeneratedClass" or nomC == "Class" then
+                if #toutesClassesBP < 6000 then toutesClassesBP[#toutesClassesBP + 1] = nomO end
+                for _, mot in ipairs(MOTS_OBJETS) do
+                    if bas:find(mot, 1, true) then
+                        if #classesInteressantes < 2500 then
+                            classesInteressantes[#classesInteressantes + 1] = { nom = nomO, objet = objet, mot = mot }
+                        end
+                        break
+                    end
+                end
+            end
+        end)
+        return true
+    end, false)
+
+    if not balayageFait then
+        noter("  ECHEC : `ForEachUObject` n est pas disponible dans cette version")
+        noter("  d UE4SS. Rien n a ete balaye -- ce n est pas la meme chose que")
+        noter("  <<rien trouve>>. Dis-le-moi, il y a d autres chemins.")
+    else
+        noter("  " .. vusUObject .. " objet(s) en memoire")
+        noter("  " .. #toutesClassesBP .. " classe(s)")
+        noter("  " .. #classesInteressantes .. " classe(s) qui ressemblent a un objet du jeu")
+        noter("  " .. #tablesDeDonnees .. " table(s) de donnees")
+        poser()
+
+        sousTitre("Les types d objets les plus nombreux en memoire")
+        local types = {}
+        for k, v in pairs(parType) do types[#types + 1] = { k = k, v = v } end
+        table.sort(types, function(a, b) return a.v > b.v end)
+        for i = 1, math.min(#types, 60) do
+            noterDiscret(string.format("  %-54s %7d", types[i].k, types[i].v))
+        end
+        poser()
+    end
+
+    -- == 8b. LES TABLES DE DONNEES : LA LISTE DES OBJETS DU JEU ==========
+    titre("TABLES DE DONNEES")
+    noter("Une table de donnees contient une ligne par objet du jeu : nom,")
+    noter("quantite empilable, icone, description. C est la reponse la plus")
+    noter("directe a <<quels objets existent>>, et elle ne demande rien au joueur.")
+
+    --[[
+      ATTENTION : ON ESSAIE PLUSIEURS CHEMINS POUR LIRE LES LIGNES. `RowMap` est
+      une TMap que le Lua ne lit pas toujours ; `GetRowNames` est une fonction de
+      bibliotheque Blueprint qui, elle, passe souvent. On tente les deux et on
+      ecrit ce qui a marche, pas ce qui aurait du marcher.
+    ]]
+    local biblioTable = sur(function()
+        return StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
+    end, nil)
+    noter("  bibliotheque DataTable : " .. (estValide(biblioTable) and "trouvee" or "ABSENTE"))
+
+    for i, tbl in ipairs(tablesDeDonnees) do
+        if i > 60 then
+            noter("  (... " .. (#tablesDeDonnees - 60) .. " autres tables, plafond atteint)")
+            break
+        end
+        noter("")
+        noter("  TABLE : " .. nomComplet(tbl))
+        local structure = sur(function() return tbl.RowStruct end, nil)
+        noter("    structure de ligne : " .. (estValide(structure) and nomCourt(structure) or "?"))
+
+        -- Les champs d une ligne : ils decrivent ce qu un objet porte.
+        if estValide(structure) then
+            local nchamps = pourChaquePropriete(structure, function(st, nomP, typeP, dra)
+                noterDiscret(string.format("      champ %-28s %-16s%s", nomP, typeP, dra))
+            end, 60)
+            if nchamps == 0 then noter("      (champs illisibles)") end
+        end
+
+        local noms = nil
+        if estValide(biblioTable) then
+            noms = sur(function() return biblioTable:GetDataTableRowNames(tbl) end, nil)
+        end
+        if noms == nil then noms = sur(function() return tbl:GetRowNames() end, nil) end
+
+        local n = sur(function() return #noms end, nil)
+        if n == nil then
+            noter("    lignes : ILLISIBLES par ce chemin")
+        else
+            noter("    lignes : " .. n)
+            local montrees = pourChaque(noms, function(e, k)
+                noterDiscret("      [" .. k .. "] " .. decrire(e, 1))
+            end, 400)
+            if n > montrees then noter("      (... " .. (n - montrees) .. " autres)") end
+        end
+        poser()
+    end
+    if #tablesDeDonnees == 0 then
+        noter("  Aucune table de donnees en memoire.")
+    end
+
+    -- == 8c. LES OBJETS DU JEU, PAR LEUR CLASSE PAR DEFAUT ===============
+    titre("LES OBJETS DU JEU, SANS EN POSER UN SEUL")
+    noter("Chaque classe porte un exemplaire par defaut -- le <<CDO>> -- dont les")
+    noter("proprietes sont celles de l objet avant toute partie : son nom, sa")
+    noter("quantite empilable, son maillage, sa recette. On le lit sans rien")
+    noter("poser, sans rien ramasser, et sans avoir commence a jouer.")
+
+    table.sort(classesInteressantes, function(a, b) return a.nom < b.nom end)
+    sousTitre("Les classes trouvees (" .. #classesInteressantes .. ")")
+    for i, c in ipairs(classesInteressantes) do
+        noterDiscret(string.format("  %-62s %s", c.nom, c.mot))
+        if i % 500 == 0 then poser() end
+    end
+    poser()
+
+    --[[
+      ATTENTION : ON NE VIDE PAS LES POCHES DE DEUX MILLE CLASSES. Le fichier
+      ferait des dizaines de megaoctets et personne ne le lirait. On decrit en
+      entier les PREMIERES, et la liste complete est juste au-dessus : si une
+      classe t interesse, dis-la-moi et on la regarde.
+    ]]
+    sousTitre("Les " .. math.min(#classesInteressantes, 120) .. " premieres, poches videes")
+    for i = 1, math.min(#classesInteressantes, 120) do
+        local c = classesInteressantes[i]
+        local cdo = sur(function() return c.objet:GetCDO() end, nil)
+            or sur(function() return c.objet:GetClassDefaultObject() end, nil)
+            or sur(function() return StaticFindObject(nomComplet(c.objet):gsub("^%S+ ", "")) end, nil)
+        noterDiscret("")
+        noterDiscret("  " .. c.nom)
+        if not estValide(cdo) then
+            noterDiscret("    (exemplaire par defaut illisible)")
+        else
+            noterDiscret("    heritage : " .. hierarchie(cdo))
+            local n = pourChaquePropriete(sur(function() return cdo:GetClass() end, nil),
+                function(st, nomP, typeP, dra)
+                    local v = sur(function() return cdo[nomP] end, nil)
+                    -- Un champ vide ne dit rien : on ne l ecrit pas.
+                    if v ~= nil and v ~= 0 and v ~= false and v ~= "" then
+                        noterDiscret(string.format("    %-28s %-16s = %s%s", nomP, typeP, decrire(v, 1), dra))
+                    end
+                end, 80)
+            if n == 0 then noterDiscret("    (aucune propriete lisible)") end
+        end
+        if i % 20 == 0 then poser() end
+    end
+    poser()
+
+    -- == 8d. TOUTES LES CLASSES, SANS FILTRE =============================
+    titre("TOUTES LES CLASSES DU JEU, SANS FILTRE")
+    noter("Si aucun de mes mots-cles ne colle, le bon nom est forcement dans")
+    noter("cette liste. Elle est longue ; c est voulu. Cherche dedans.")
+    table.sort(toutesClassesBP)
+    for i, nom in ipairs(toutesClassesBP) do
+        noterDiscret("  " .. nom)
+        if i % 1000 == 0 then poser() end
+    end
+    poser()
+
+    -- == 8e. LE REGISTRE DES ASSETS : CE QUI EST SUR LE DISQUE ===========
+    titre("REGISTRE DES ASSETS")
+    noter("Tout ce qui precede ne voit que ce qui est CHARGE. Le registre des")
+    noter("assets, lui, connait ce qui est sur le disque -- y compris ce que le")
+    noter("jeu n a pas encore ouvert.")
+
+    --[[
+      ATTENTION : CE CHEMIN ECHOUE SOUVENT, ET C EST ACCEPTABLE. Il demande des
+      parametres de sortie que le Lua d UE4SS ne sait pas toujours passer. On
+      essaie, on dit ce qui s est passe, et le reste du fichier garde sa valeur.
+    ]]
+    local aides = sur(function()
+        return StaticFindObject("/Script/AssetRegistry.Default__AssetRegistryHelpers")
+    end, nil)
+    noter("  AssetRegistryHelpers : " .. (estValide(aides) and "trouve" or "ABSENT"))
+    if estValide(aides) then
+        local registre = sur(function() return aides:GetAssetRegistry() end, nil)
+        noter("  registre : " .. (registre ~= nil and "obtenu" or "ILLISIBLE"))
+        if registre ~= nil then
+            local tout = sur(function() return registre:GetAllAssets({}, false) end, nil)
+            local n = sur(function() return #tout end, nil)
+            if n == nil then
+                noter("  GetAllAssets : illisible depuis le Lua (parametre de sortie).")
+                noter("  Ce n est pas grave : les sections precedentes couvrent ce qui")
+                noter("  est charge, et le jeu charge ses definitions d objets tot.")
+            else
+                noter("  " .. n .. " asset(s) sur le disque")
+                pourChaque(tout, function(a, k)
+                    noterDiscret("    [" .. k .. "] " .. decrire(a, 1))
+                end, 3000)
+                poser()
+            end
+        end
+    end
+end
+
 local function sonder()
     local pion = trouverPion()
     if not enPartie(pion) then return false end
 
-    lignes = {}
+    vider()
     noter("=== " .. NOM .. " ===")
     noter("Charge une partie, joue un peu, pose un objet, prends et depose des")
     noter("choses dans un coffre : les crochets ecrivent au fur et a mesure.")
@@ -990,250 +1268,18 @@ local function sonder()
         end, MAX_PROPRIETES)
     if nsg == 0 then noter("    (aucune, ou les drapeaux ne sont pas lisibles ici)") end
 
-    -- == 8. TOUT LE JEU, PAS SEULEMENT LE MONDE CHARGE ==================
-    titre("TOUT CE QUI EXISTE EN MEMOIRE")
-    noter("Le monde charge dit ce qui est POSE. Le registre des objets dit ce")
-    noter("qui EXISTE. Au debut d une partie le premier est presque vide et le")
-    noter("second est deja plein : c est la que vivent les definitions d objets,")
-    noter("d outils et de pieces, qu on ait pose quelque chose ou non.")
+    titre("LE BALAYAGE COMPLET DU JEU ATTEND TA TOUCHE")
+    noter("Le releve ci-dessus est fait. Il reste le gros morceau : le registre")
+    noter("complet des objets du jeu -- toutes les classes, tous les objets")
+    noter("ramassables, toutes les tables de donnees.")
     noter("")
-    noter("Ce balayage prend une dizaine de secondes. Le jeu peut saccader.")
-
-    --[[
-      ATTENTION : `ForEachUObject` PARCOURT TOUT CE QUE LE MOTEUR A EN MEMOIRE,
-      classes comprises -- des centaines de milliers d entrees. On compte tout,
-      on en ECRIT peu, et on garde de cote celles qui nous interessent.
-
-      ATTENTION : SI CETTE FONCTION N EXISTE PAS DANS CETTE VERSION D UE4SS, on
-      le DIT. Un balayage qui ne trouve rien et un balayage qui n a pas eu lieu
-      se ressemblent beaucoup dans un fichier, et seul le second se repare.
-    ]]
-    local MOTS_OBJETS = {
-        "item", "tool", "weapon", "gun", "axe", "knife", "pickaxe", "hammer",
-        "resource", "material", "ore", "scrap", "metal", "wood", "plank", "fiber",
-        "food", "drink", "water", "fuel", "battery", "cell", "ammo", "medkit",
-        "craft", "recipe", "blueprint", "schematic", "loot", "pickup", "drop",
-        "equip", "armor", "suit", "helmet", "backpack", "bag", "container",
-        "consumable", "seed", "plant", "fish", "component", "part", "module",
-        "prop", "placeable", "buildable", "deployable", "structure", "wall",
-        "floor", "roof", "door", "hatch", "window", "ramp", "stair", "foundation",
-        "pillar", "beam", "cable", "wire", "pipe", "panel", "solar", "generator",
-        "grinder", "bench", "forge", "turbine", "diesel", "tank", "storage",
-    }
-
-    local parType = {}
-    local classesInteressantes = {}
-    local tablesDeDonnees = {}
-    local toutesClassesBP = {}
-    local vusUObject = 0
-    local balayageFait = false
-
-    balayageFait = sur(function()
-        ForEachUObject(function(objet)
-            vusUObject = vusUObject + 1
-            local nomC = sur(function() return objet:GetClass():GetFName():ToString() end, nil)
-            if nomC == nil then return end
-            parType[nomC] = (parType[nomC] or 0) + 1
-
-            local nomO = sur(function() return objet:GetFName():ToString() end, "")
-            local bas = nomO:lower()
-
-            -- Les tables de donnees : c est la que vivent les listes d objets.
-            if nomC == "DataTable" then
-                tablesDeDonnees[#tablesDeDonnees + 1] = objet
-                return
-            end
-
-            --[[
-              Une classe Blueprint porte le suffixe `_C`. Toutes les definitions
-              d objets du jeu en sont, et elles sont en memoire bien avant qu on
-              en pose une seule.
-            ]]
-            if nomC == "BlueprintGeneratedClass" or nomC == "Class" then
-                if #toutesClassesBP < 6000 then toutesClassesBP[#toutesClassesBP + 1] = nomO end
-                for _, mot in ipairs(MOTS_OBJETS) do
-                    if bas:find(mot, 1, true) then
-                        if #classesInteressantes < 2500 then
-                            classesInteressantes[#classesInteressantes + 1] = { nom = nomO, objet = objet, mot = mot }
-                        end
-                        break
-                    end
-                end
-            end
-        end)
-        return true
-    end, false)
-
-    if not balayageFait then
-        noter("  ECHEC : `ForEachUObject` n est pas disponible dans cette version")
-        noter("  d UE4SS. Rien n a ete balaye -- ce n est pas la meme chose que")
-        noter("  <<rien trouve>>. Dis-le-moi, il y a d autres chemins.")
-    else
-        noter("  " .. vusUObject .. " objet(s) en memoire")
-        noter("  " .. #toutesClassesBP .. " classe(s)")
-        noter("  " .. #classesInteressantes .. " classe(s) qui ressemblent a un objet du jeu")
-        noter("  " .. #tablesDeDonnees .. " table(s) de donnees")
-        poser()
-
-        sousTitre("Les types d objets les plus nombreux en memoire")
-        local types = {}
-        for k, v in pairs(parType) do types[#types + 1] = { k = k, v = v } end
-        table.sort(types, function(a, b) return a.v > b.v end)
-        for i = 1, math.min(#types, 60) do
-            noterDiscret(string.format("  %-54s %7d", types[i].k, types[i].v))
-        end
-        poser()
-    end
-
-    -- == 8b. LES TABLES DE DONNEES : LA LISTE DES OBJETS DU JEU ==========
-    titre("TABLES DE DONNEES")
-    noter("Une table de donnees contient une ligne par objet du jeu : nom,")
-    noter("quantite empilable, icone, description. C est la reponse la plus")
-    noter("directe a <<quels objets existent>>, et elle ne demande rien au joueur.")
-
-    --[[
-      ATTENTION : ON ESSAIE PLUSIEURS CHEMINS POUR LIRE LES LIGNES. `RowMap` est
-      une TMap que le Lua ne lit pas toujours ; `GetRowNames` est une fonction de
-      bibliotheque Blueprint qui, elle, passe souvent. On tente les deux et on
-      ecrit ce qui a marche, pas ce qui aurait du marcher.
-    ]]
-    local biblioTable = sur(function()
-        return StaticFindObject("/Script/Engine.Default__DataTableFunctionLibrary")
-    end, nil)
-    noter("  bibliotheque DataTable : " .. (estValide(biblioTable) and "trouvee" or "ABSENTE"))
-
-    for i, tbl in ipairs(tablesDeDonnees) do
-        if i > 60 then
-            noter("  (... " .. (#tablesDeDonnees - 60) .. " autres tables, plafond atteint)")
-            break
-        end
-        noter("")
-        noter("  TABLE : " .. nomComplet(tbl))
-        local structure = sur(function() return tbl.RowStruct end, nil)
-        noter("    structure de ligne : " .. (estValide(structure) and nomCourt(structure) or "?"))
-
-        -- Les champs d une ligne : ils decrivent ce qu un objet porte.
-        if estValide(structure) then
-            local nchamps = pourChaquePropriete(structure, function(st, nomP, typeP, dra)
-                noterDiscret(string.format("      champ %-28s %-16s%s", nomP, typeP, dra))
-            end, 60)
-            if nchamps == 0 then noter("      (champs illisibles)") end
-        end
-
-        local noms = nil
-        if estValide(biblioTable) then
-            noms = sur(function() return biblioTable:GetDataTableRowNames(tbl) end, nil)
-        end
-        if noms == nil then noms = sur(function() return tbl:GetRowNames() end, nil) end
-
-        local n = sur(function() return #noms end, nil)
-        if n == nil then
-            noter("    lignes : ILLISIBLES par ce chemin")
-        else
-            noter("    lignes : " .. n)
-            local montrees = pourChaque(noms, function(e, k)
-                noterDiscret("      [" .. k .. "] " .. decrire(e, 1))
-            end, 400)
-            if n > montrees then noter("      (... " .. (n - montrees) .. " autres)") end
-        end
-        poser()
-    end
-    if #tablesDeDonnees == 0 then
-        noter("  Aucune table de donnees en memoire.")
-    end
-
-    -- == 8c. LES OBJETS DU JEU, PAR LEUR CLASSE PAR DEFAUT ===============
-    titre("LES OBJETS DU JEU, SANS EN POSER UN SEUL")
-    noter("Chaque classe porte un exemplaire par defaut -- le <<CDO>> -- dont les")
-    noter("proprietes sont celles de l objet avant toute partie : son nom, sa")
-    noter("quantite empilable, son maillage, sa recette. On le lit sans rien")
-    noter("poser, sans rien ramasser, et sans avoir commence a jouer.")
-
-    table.sort(classesInteressantes, function(a, b) return a.nom < b.nom end)
-    sousTitre("Les classes trouvees (" .. #classesInteressantes .. ")")
-    for i, c in ipairs(classesInteressantes) do
-        noterDiscret(string.format("  %-62s %s", c.nom, c.mot))
-        if i % 500 == 0 then poser() end
-    end
-    poser()
-
-    --[[
-      ATTENTION : ON NE VIDE PAS LES POCHES DE DEUX MILLE CLASSES. Le fichier
-      ferait des dizaines de megaoctets et personne ne le lirait. On decrit en
-      entier les PREMIERES, et la liste complete est juste au-dessus : si une
-      classe t interesse, dis-la-moi et on la regarde.
-    ]]
-    sousTitre("Les " .. math.min(#classesInteressantes, 120) .. " premieres, poches videes")
-    for i = 1, math.min(#classesInteressantes, 120) do
-        local c = classesInteressantes[i]
-        local cdo = sur(function() return c.objet:GetCDO() end, nil)
-            or sur(function() return c.objet:GetClassDefaultObject() end, nil)
-            or sur(function() return StaticFindObject(nomComplet(c.objet):gsub("^%S+ ", "")) end, nil)
-        noterDiscret("")
-        noterDiscret("  " .. c.nom)
-        if not estValide(cdo) then
-            noterDiscret("    (exemplaire par defaut illisible)")
-        else
-            noterDiscret("    heritage : " .. hierarchie(cdo))
-            local n = pourChaquePropriete(sur(function() return cdo:GetClass() end, nil),
-                function(st, nomP, typeP, dra)
-                    local v = sur(function() return cdo[nomP] end, nil)
-                    -- Un champ vide ne dit rien : on ne l ecrit pas.
-                    if v ~= nil and v ~= 0 and v ~= false and v ~= "" then
-                        noterDiscret(string.format("    %-28s %-16s = %s%s", nomP, typeP, decrire(v, 1), dra))
-                    end
-                end, 80)
-            if n == 0 then noterDiscret("    (aucune propriete lisible)") end
-        end
-        if i % 20 == 0 then poser() end
-    end
-    poser()
-
-    -- == 8d. TOUTES LES CLASSES, SANS FILTRE =============================
-    titre("TOUTES LES CLASSES DU JEU, SANS FILTRE")
-    noter("Si aucun de mes mots-cles ne colle, le bon nom est forcement dans")
-    noter("cette liste. Elle est longue ; c est voulu. Cherche dedans.")
-    table.sort(toutesClassesBP)
-    for i, nom in ipairs(toutesClassesBP) do
-        noterDiscret("  " .. nom)
-        if i % 1000 == 0 then poser() end
-    end
-    poser()
-
-    -- == 8e. LE REGISTRE DES ASSETS : CE QUI EST SUR LE DISQUE ===========
-    titre("REGISTRE DES ASSETS")
-    noter("Tout ce qui precede ne voit que ce qui est CHARGE. Le registre des")
-    noter("assets, lui, connait ce qui est sur le disque -- y compris ce que le")
-    noter("jeu n a pas encore ouvert.")
-
-    --[[
-      ATTENTION : CE CHEMIN ECHOUE SOUVENT, ET C EST ACCEPTABLE. Il demande des
-      parametres de sortie que le Lua d UE4SS ne sait pas toujours passer. On
-      essaie, on dit ce qui s est passe, et le reste du fichier garde sa valeur.
-    ]]
-    local aides = sur(function()
-        return StaticFindObject("/Script/AssetRegistry.Default__AssetRegistryHelpers")
-    end, nil)
-    noter("  AssetRegistryHelpers : " .. (estValide(aides) and "trouve" or "ABSENT"))
-    if estValide(aides) then
-        local registre = sur(function() return aides:GetAssetRegistry() end, nil)
-        noter("  registre : " .. (registre ~= nil and "obtenu" or "ILLISIBLE"))
-        if registre ~= nil then
-            local tout = sur(function() return registre:GetAllAssets({}, false) end, nil)
-            local n = sur(function() return #tout end, nil)
-            if n == nil then
-                noter("  GetAllAssets : illisible depuis le Lua (parametre de sortie).")
-                noter("  Ce n est pas grave : les sections precedentes couvrent ce qui")
-                noter("  est charge, et le jeu charge ses definitions d objets tot.")
-            else
-                noter("  " .. n .. " asset(s) sur le disque")
-                pourChaque(tout, function(a, k)
-                    noterDiscret("    [" .. k .. "] " .. decrire(a, 1))
-                end, 3000)
-                poser()
-            end
-        end
-    end
+    noter("IL NE SE DECLENCHE PAS TOUT SEUL, ET C EST VOULU. Il parcourt des")
+    noter("centaines de milliers d objets sur le fil du jeu : lance pendant un")
+    noter("chargement, il gele la partie assez longtemps pour que Windows la")
+    noter("declare << ne repond plus >>. C est ce qui est arrive.")
+    noter("")
+    noter("APPUIE SUR F8 quand tu es debout, immobile, dans une partie chargee.")
+    noter("Le jeu va saccader une dizaine de secondes. C est normal.")
 
     titre("FIN DU RELEVE INITIAL")
     noter("A partir d'ici, seules les PRISES des crochets s'ajoutent.")
@@ -1438,25 +1484,27 @@ end)
 ]]
 pcall(function()
     RegisterKeyBind(Key.F8, function()
+        --[[
+          ATTENTION : `RegisterKeyBind` SE DECLENCHE HORS DU FIL DU JEU. Toucher
+          aux objets d Unreal depuis la, c est un plantage une fois sur dix : on
+          repasse par `ExecuteInGameThread`.
+        ]]
         ExecuteInGameThread(function()
             pcall(function()
-                print("[" .. NOM .. "] F8 : on refait le releve.\n")
-                local garde = {}
-                for _, l in ipairs(lignes) do garde[#garde + 1] = l end
-                pret = false
-                essais = 0
-                if sonder() then
-                    pret = true
-                    -- On remet les prises d'avant au-dessus : elles sont la valeur du fichier.
-                    local tout = { "=== PRISES DU RELEVE PRECEDENT ===" }
-                    for _, l in ipairs(garde) do
-                        if l:find("%[PRISE") then tout[#tout + 1] = l end
-                    end
-                    tout[#tout + 1] = ""
-                    for _, l in ipairs(lignes) do tout[#tout + 1] = l end
-                    lignes = tout
-                    pcall(ecrire)
+                if balayageEnCours then
+                    print("[" .. NOM .. "] le balayage tourne deja.\n")
+                    return
                 end
+                if not pret then
+                    print("[" .. NOM .. "] charge une partie d abord.\n")
+                    return
+                end
+                balayageEnCours = true
+                print("[" .. NOM .. "] F8 : balayage complet, ca va saccader.\n")
+                pcall(balayerToutLeJeu)
+                poser()
+                print("[" .. NOM .. "] balayage fini. Fichier : " .. FICHIER .. "\n")
+                balayageEnCours = false
             end)
         end)
     end)

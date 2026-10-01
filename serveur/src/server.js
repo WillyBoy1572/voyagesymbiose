@@ -562,8 +562,18 @@ function traiterMessage(brut, adresse, port) {
 
     case 'ping': {
       session.envoyerA(joueur, { t: 'pong', ts: message.ts, serveur: Date.now() })
-      if (message.ts > 0) {
-        const allerRetour = Math.max(0, Math.min(Date.now() - message.ts, 60_000))
+      /*
+        ⚠️ ON NE SOUSTRAIT PLUS DEUX HORLOGES. `Date.now() - message.ts` melange
+           l'heure du serveur et celle du client : chez un joueur dont la machine
+           retarde d'une minute, le lien etait affiche a 60 000 ms et « mauvais »
+           en permanence. C'est le client qui mesure, sur sa seule horloge, et qui
+           nous rend le nombre.
+
+        ⚠️ UN CLIENT PLUS ANCIEN NE L'ENVOIE PAS. Dans ce cas on ne sait pas, et
+           « on ne sait pas » n'est pas « 0 ms » : on ne touche a rien.
+      */
+      if (Number.isFinite(message.rtt) && message.rtt >= 0) {
+        const allerRetour = Math.min(message.rtt, 60_000)
         joueur.ping = allerRetour
         joueur.qualite.allerRetour(allerRetour)
       }

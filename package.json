@@ -1,6 +1,6 @@
 {
   "name": "symbiose-voyage-lanceur",
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Lanceur Voyage — installe UE4SS et les mods dans The Last Caretaker, liste les serveurs et tient le lien avec eux.",
   "main": "src/principal.js",
   "scripts": {

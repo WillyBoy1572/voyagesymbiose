@@ -390,6 +390,19 @@ function valider(brut) {
         t: 'ping',
         jeton: chaine(brut.jeton, LIMITES.cle),
         ts: nombreFini(brut.ts, Number.MAX_SAFE_INTEGER) ? brut.ts : 0,
+        /*
+          ⚠️ L'ALLER-RETOUR EST MESURE PAR LE CLIENT, ET IL N'Y A PAS D'AUTRE
+             CHOIX. Le serveur ne peut pas le calculer : `Date.now() - ts`
+             soustrait DEUX HORLOGES DIFFERENTES. Chez un joueur dont la
+             machine retarde d'une minute, ca rendait 60 000 ms et un lien
+             declare « mauvais » en permanence, sans aucun rapport avec le
+             reseau. Le client, lui, compare son depart et son retour sur la
+             MEME horloge.
+
+          ⚠️ DONC ON NE LUI FAIT PAS CONFIANCE AVEUGLEMENT : c'est un chiffre
+             d'affichage, borne ici, et aucune decision du serveur n'en depend.
+        */
+        rtt: nombreFini(brut.rtt, 600_000) ? brut.rtt : null,
       }
 
     /** Ce que le mod a reussi a faire dans le jeu. Sert au diagnostic, a rien d'autre. */
