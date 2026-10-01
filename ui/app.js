@@ -199,9 +199,19 @@ function ligneServeur(s) {
   titre.textContent = s.enLigne ? s.nom : `${s.hote}:${s.port}`
   const detail = document.createElement('div')
   detail.className = 'detail'
+  /*
+    ⚠️ ON DIT D'OU VIENT LA CARTE. Un serveur venu de l'annuaire public n'est pas
+       un signet du joueur : il peut avoir disparu demain. Le marquer évite qu'il
+       le cherche dans sa liste.
+  */
+  const marques = []
+  if (s.motDePasse) marques.push(T('serv.protege'))
+  if (s.public) marques.push(T('serv.public'))
+  if (s.pays) marques.push(s.pays)
+
   detail.textContent = s.enLigne
     ? `${s.hote}:${s.port} · ${s.joueurs}/${s.maxJoueurs} ${T('serv.joueurs')} · v${s.version}${
-        s.motDePasse ? ` · ${T('serv.protege')}` : ''
+        marques.length ? ` · ${marques.join(' · ')}` : ''
       }`
     : T('serv.muet')
   gauche.append(titre, detail)
@@ -241,15 +251,31 @@ function ligneServeur(s) {
     dire(T('lien.jeuDemarre'), 'bon')
   })
 
-  const retirer = document.createElement('button')
-  retirer.className = 'action discret'
-  retirer.textContent = T('serv.retirer')
-  retirer.addEventListener('click', async () => {
-    deballer(await window.voyage.retirerServeur(s.hote, s.port))
-    chargerServeurs()
-  })
+  /*
+    ⚠️ ON NE PROPOSE PAS DE RETIRER CE QU'ON N'A PAS AJOUTE. Un serveur venu de
+       l'annuaire n'est pas dans le fichier du joueur : le bouton « Retirer »
+       n'aurait rien à retirer, et le serveur réapparaîtrait à l'actualisation
+       suivante. On propose l'inverse : le garder.
+  */
+  const dernier = document.createElement('button')
+  dernier.className = 'action discret'
+  if (s.public) {
+    dernier.textContent = T('serv.garder')
+    dernier.addEventListener('click', async () => {
+      const r = deballer(await window.voyage.ajouterServeur(`${s.hote}:${s.port}`))
+      if (r && !r.ok) return dire(r.erreur, 'erreur')
+      dire(T('serv.ajoute'), 'bon')
+      chargerServeurs()
+    })
+  } else {
+    dernier.textContent = T('serv.retirer')
+    dernier.addEventListener('click', async () => {
+      deballer(await window.voyage.retirerServeur(s.hote, s.port))
+      chargerServeurs()
+    })
+  }
 
-  droite.append(etat, brancher, jouer, retirer)
+  droite.append(etat, brancher, jouer, dernier)
   ligne.append(gauche, droite)
   return ligne
 }
@@ -312,6 +338,31 @@ function montrerLien(etat) {
   $('lien-etat').textContent = actif ? T('serv.enLigne') : T('serv.horsLigne')
   $('lien-etat').className = `etat ${actif ? 'ok' : ''}`.trim()
   $('btn-deconnecter').disabled = !actif
+  /*
+    Le chat, les commandes et le coffre n'ont de sens que relies a un serveur.
+
+    ⚠️ ON DESACTIVE LES CHAMPS, ON NE LES CACHE PAS. Un champ qui disparait
+       laisse croire que la fonctionnalite n'existe pas ; un champ grise dit
+       qu'il faut d'abord se brancher.
+  */
+  for (const id of [
+    'chat-texte',
+    'btn-chat',
+    'chat-canal',
+    'commande-texte',
+    'btn-commande',
+    'coffre-objet',
+    'coffre-nombre',
+    'btn-coffre-deposer',
+    'btn-coffre-retirer',
+  ]) {
+    const champ = $(id)
+    if (champ) champ.disabled = !actif
+  }
+
+  // Branche ou debranche la lecture reguliere de la partie.
+  if (actif) demarrerSuiviDeLaPartie()
+  else arreterSuiviDeLaPartie()
   $('lien-detail').textContent = actif ? T('lien.pendant') : T('lien.avant')
   if (etat?.lignes) ecrireJournalLien(etat.lignes)
 }
@@ -343,6 +394,187 @@ window.voyage.surLigneDuLien((ligne) => {
   if (/connect(é à|ed to)|conectado a/.test(ligneJournal(ligne))) {
     montrerLien({ actif: true, cible: cibleCourante, lignes: lignesLien })
   }
+})
+
+/*
+  ⚠️ ON VIDE LE CHAMP AVANT L ENVOI, PAS APRES. Un aller-retour rate laissait
+     sinon le message en place, et le joueur appuyait deux fois.
+*/
+$('chat-forme').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const champ = $('chat-texte')
+  const texte = champ.value.trim()
+  if (!texte) return
+  champ.value = ''
+  const canal = $('chat-canal') ? $('chat-canal').value : 'global'
+  const r = await window.voyage.envoyerChat(texte, canal)
+  if (!r || !r.ok) champ.value = texte
+})
+
+/*
+  Une commande part telle quelle au serveur.
+
+  ⚠️ LE LANCEUR N'INTERPRETE RIEN. C'est le serveur qui dit si la commande
+     existe et si le joueur a le droit de la lancer ; sa reponse arrive dans le
+     journal du lien, comme en jeu.
+*/
+$('commande-forme').addEventListener('submit', async (e) => {
+  e.preventDefault()
+  const champ = $('commande-texte')
+  const texte = champ.value.trim()
+  if (!texte) return
+  champ.value = ''
+  const r = await window.voyage.envoyerCommande(texte)
+  if (!r || !r.ok) champ.value = texte
+})
+
+// ── Le coffre commun ────────────────────────────────────────────
+
+async function bougerLeCoffre(sens) {
+  const nom = $('coffre-objet').value.trim()
+  if (!nom) return
+  const nombre = Number.parseInt($('coffre-nombre').value, 10) || 1
+  const r =
+    sens === 'deposer'
+      ? await window.voyage.deposerAuCoffre(nom, nombre)
+      : await window.voyage.retirerDuCoffre(nom, nombre)
+  if (r && r.ok) dire(T('coffre.envoye'), 'bon')
+}
+
+$('coffre-forme').addEventListener('submit', (e) => {
+  e.preventDefault()
+  bougerLeCoffre('deposer')
+})
+$('btn-coffre-retirer').addEventListener('click', () => bougerLeCoffre('retirer'))
+
+// ── La partie en cours ─────────────────────────────────────────
+
+/*
+  ⚠️ ON LIT LE SERVEUR, PAS LE PONT. Le pont ne garde pas la liste des equipes
+     ni le coffre : il relaie. Le port TCP du serveur, lui, les donne sans
+     aucun secret -- ni adresse de joueur, ni empreinte, ni jeton.
+
+  ⚠️ TOUTES LES TROIS SECONDES, PAS PLUS SOUVENT. Ces chiffres changent au
+     rythme d'une partie, pas d'une image : interroger dix fois par seconde
+     ferait du bruit pour rien.
+*/
+let minuteriePartie = null
+
+function arreterSuiviDeLaPartie() {
+  if (minuteriePartie) clearInterval(minuteriePartie)
+  minuteriePartie = null
+}
+
+function demarrerSuiviDeLaPartie() {
+  if (minuteriePartie) return
+  lireLaPartie()
+  minuteriePartie = setInterval(lireLaPartie, 3000)
+}
+
+function texteOuDefaut(element, texte, cleDefaut) {
+  // textContent, pas innerHTML : ces noms viennent du serveur.
+  element.textContent = texte || T(cleDefaut)
+}
+
+async function lireLaPartie() {
+  if (!cibleCourante) return
+  const d = await window.voyage.detailServeur(cibleCourante.hote, cibleCourante.port)
+  const detail = d && d.ok !== false ? d : null
+  if (!detail) return
+
+  const joueurs = detail.joueurs?.joueurs ?? []
+  texteOuDefaut(
+    $('partie-joueurs'),
+    joueurs
+      .map((j) => {
+        const marques = []
+        if (j.hote) marques.push('hôte')
+        if (j.spectateur) marques.push('spectateur')
+        if (j.equipe) marques.push(j.equipe)
+        return `${j.nom}${marques.length ? ` (${marques.join(', ')})` : ''} — ${j.ping} ms`
+      })
+      .join('  ·  '),
+    'partie.vide',
+  )
+  $('partie-compte').textContent = detail.info
+    ? `${detail.info.joueurs}/${detail.info.maxJoueurs}`
+    : '—'
+
+  const equipes = detail.equipes?.equipes ?? []
+  texteOuDefaut(
+    $('partie-equipes'),
+    equipes
+      .map((e) => `${e.nom} — ${e.membres.length} (${e.prets.length} ${T('partie.pret')})`)
+      .join('  ·  '),
+    'partie.aucuneEquipe',
+  )
+
+  const activites = detail.activites?.activites ?? []
+  texteOuDefaut(
+    $('partie-activites'),
+    activites
+      .map((a) => {
+        const faites = a.etapes.filter((x) => x.faite).length
+        return `n°${a.id} ${a.titre} [${a.etat}] ${faites}/${a.etapes.length}`
+      })
+      .join('  ·  '),
+    'partie.aucuneActivite',
+  )
+
+  const coffre = detail.coffre?.coffre ?? []
+  texteOuDefaut(
+    $('coffre-contenu'),
+    coffre.map((o) => `${o.nom} ×${o.nombre}`).join('  ·  '),
+    'coffre.vide',
+  )
+
+  /*
+    ⚠️ UNE MESURE ABSENTE S'AFFICHE COMME ABSENTE, JAMAIS COMME ZERO. Un
+       serveur plus ancien n'a pas `/mesures` : afficher « 0 ms de tick »
+       ferait croire a la perfection alors que rien n'a ete mesure.
+  */
+  const m = detail.mesures
+  $('partie-mesures').textContent =
+    m && m.total
+      ? T('partie.mesures', {
+          joueurs: joueurs.length,
+          entrant: m.reseau ? m.reseau.entrantKoParS : 'N/A',
+          tick: m.ticks ? m.ticks.moyenneMs : 'N/A',
+          memoire: m.memoireMo,
+        })
+      : T('partie.mesuresInconnues')
+}
+
+// ── L'identite ────────────────────────────────────────────────
+
+async function montrerIdentite() {
+  const i = deballer(await window.voyage.identite())
+  if (!i) return
+  $('ident-empreinte').textContent = i.empreinte
+}
+
+$('btn-ident-copier').addEventListener('click', async () => {
+  const texte = $('ident-empreinte').textContent.trim()
+  if (!texte || texte === '—') return
+  try {
+    await navigator.clipboard.writeText(texte)
+    dire(T('ident.copie'), 'bon')
+  } catch {
+    /* le presse-papiers peut etre refuse : l'empreinte reste lisible a l'ecran */
+  }
+})
+
+/*
+  ⚠️ ON DEMANDE CONFIRMATION, PARCE QUE C'EST IRREVERSIBLE. Roles, profil et
+     heures de jeu sont attaches a l'ancienne empreinte : un clic de trop ne
+     doit pas les perdre.
+*/
+$('btn-ident-refaire').addEventListener('click', async () => {
+  if (!window.confirm(T('ident.confirme'))) return
+  const i = deballer(await window.voyage.regenererIdentite())
+  if (!i) return
+  $('ident-empreinte').textContent = i.empreinte
+  dire(T('ident.refait', { empreinte: i.empreinte }), 'bon')
 })
 
 $('btn-deconnecter').addEventListener('click', async () => {
@@ -676,6 +908,12 @@ $('btn-ouvrir-jeu').addEventListener('click', async () => {
   }
 
   await rafraichirEtat()
+
+  /*
+    L'identite se lit au demarrage : le fichier est cree au premier passage, et
+    c'est l'empreinte que l'hote d'un serveur demandera.
+  */
+  await montrerIdentite()
 
   const etatLien = deballer(await window.voyage.etatLien())
   if (etatLien) {

@@ -9,6 +9,7 @@ const serveurs = require('./serveurs')
 const lien = require('./lien')
 const ue4ss = require('./ue4ss')
 const sauvegardes = require('./sauvegardes')
+const identite = require('./identite')
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -69,6 +70,31 @@ function creerFenetre() {
 }
 
 app.whenReady().then(() => {
+  /*
+    ⚠️ LE LIEN RECOIT SON CONTEXTE AVANT TOUTE CONNEXION. Sans le dossier de
+       donnees il ne peut pas signer, et le joueur entrerait en anonyme sans
+       comprendre pourquoi son role a disparu.
+  */
+  lien.poserContexte({
+    dossier: app.getPath('userData'),
+    reprisesConnues: lireReglages().reprises,
+  })
+
+  /*
+    ⚠️ LE JETON DE REPRISE S'ECRIT SUR DISQUE, PARCE QUE LE VRAI CAS D'USAGE
+       EST UN PLANTAGE. Garde seulement en memoire, il disparaitrait avec le
+       lanceur -- c'est-a-dire exactement au moment ou il sert.
+  */
+  lien.surReprise((adresse, jeton) => {
+    try {
+      const r = lireReglages()
+      r.reprises = { ...(r.reprises || {}), [adresse]: jeton }
+      ecrireReglages(r)
+    } catch {
+      /* un jeton non enregistre ne fait perdre que la reprise */
+    }
+  })
+
   creerFenetre()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) creerFenetre()
@@ -222,7 +248,111 @@ ipcMain.handle(
 
 ipcMain.handle('jouer', repondre(async (_e, dossierJeu) => jeu.lancerJeu(dossierJeu)))
 
+/*
+  Le chat part par l'entree standard du pont (voir lien.envoyerLigne).
+
+  ⚠️ LE CANAL EST VERIFIE ICI, PAS DANS LA PAGE. La page est du HTML : ce
+     qu'elle envoie n'est pas une garantie. Un canal inconnu devient « global »
+     plutot que de produire une ligne que le pont ne saura pas lire.
+*/
+const CANAUX = { global: 'chat', local: 'chat-local', equipe: 'chat-equipe' }
+
+ipcMain.handle('chat:envoyer', repondre(async (_e, texte, canal) => {
+  const propre = String(texte || '').slice(0, 240).trim()
+  if (!propre) return { ok: false }
+  const mot = CANAUX[String(canal || 'global')] || 'chat'
+  return { ok: lien.envoyerLigne(mot + ' ' + propre) }
+}))
+
+/*
+  Une commande de serveur, tapee depuis le lanceur.
+
+  ⚠️ LE LANCEUR N'INTERPRETE RIEN. C'est le serveur qui decide si la commande
+     existe et si le joueur a le droit de la lancer ; le lanceur qui filtrerait
+     lui-meme donnerait une liste a maintenir en deux endroits.
+*/
+ipcMain.handle('commande:envoyer', repondre(async (_e, texte) => {
+  const propre = String(texte || '').slice(0, 240).trim()
+  if (!propre) return { ok: false }
+  return { ok: lien.envoyerLigne('commande ' + propre) }
+}))
+
+/*
+  Le coffre commun.
+
+  ⚠️ C'EST LE SEUL ECHANGE D'OBJETS REELLEMENT POSSIBLE. Chaque joueur charge
+     SA sauvegarde, avec SES objets : rien dans le jeu ne relie son sac a celui
+     d'un autre. Le coffre est tenu par le serveur, et c'est lui qui debite
+     avant que quiconque recoive -- sinon un paquet perdu dupliquerait l'objet.
+*/
+ipcMain.handle('coffre:deposer', repondre(async (_e, nom, nombre) => {
+  const propre = String(nom || '').slice(0, 48).trim()
+  const combien = Math.max(1, Math.min(Number.parseInt(nombre, 10) || 1, 10000))
+  if (!propre) return { ok: false }
+  return { ok: lien.envoyerLigne(`deposer ${combien} ${propre}`) }
+}))
+
+ipcMain.handle('coffre:retirer', repondre(async (_e, nom, nombre) => {
+  const propre = String(nom || '').slice(0, 48).trim()
+  const combien = Math.max(1, Math.min(Number.parseInt(nombre, 10) || 1, 10000))
+  if (!propre) return { ok: false }
+  return { ok: lien.envoyerLigne(`retirer ${combien} ${propre}`) }
+}))
+
+/*
+  L'identite du joueur.
+
+  ⚠️ LA CLE PRIVEE NE SORT JAMAIS D'ICI. On ne rend que l'empreinte : c'est
+     elle que l'hote d'un serveur inscrit dans `PROPRIETAIRES`, et elle ne
+     permet rien a elle seule.
+*/
+ipcMain.handle('identite:lire', repondre(async () => identite.publique(app.getPath('userData'))))
+
+/*
+  ⚠️ REGENERER PERD TOUT : roles, profil, heures de jeu sont attaches a
+     l'ancienne empreinte. L'ancienne cle est mise de cote, pas effacee -- une
+     identite perdue ne se retrouve pas, et un clic ne doit pas pouvoir la
+     detruire. C'est la page qui demande confirmation.
+*/
+ipcMain.handle('identite:regenerer', repondre(async () => identite.regenerer(app.getPath('userData'))))
+
 ipcMain.handle('serveurs:liste', repondre(async () => serveurs.rafraichir()))
+
+/*
+  Le detail d'un serveur : joueurs, equipes, activites, coffre, mesures.
+
+  ⚠️ TOUT PASSE PAR LE PORT TCP PUBLIC, QUI NE REND AUCUN SECRET. Pas
+     d'adresse de joueur, pas d'empreinte, pas de jeton : exactement ce qu'on
+     accepterait d'afficher sur un site.
+
+  ⚠️ UNE ROUTE QUI NE REPOND PAS N'EST PAS UNE PANNE. Un serveur plus ancien
+     n'a pas `/equipes` ni `/mesures` : on rend `null` pour cette partie et on
+     affiche le reste, plutot que de declarer le serveur injoignable.
+*/
+ipcMain.handle(
+  'serveurs:detail',
+  repondre(async (_e, hote, port) => {
+    const base = `http://${hote}:${Number(port) + 1}`
+    const lire = async (chemin) => {
+      try {
+        const r = await fetch(base + chemin, { signal: AbortSignal.timeout(2500) })
+        if (!r.ok) return null
+        return await r.json()
+      } catch {
+        return null
+      }
+    }
+    const [info, joueurs, equipes, activites, coffre, mesures] = await Promise.all([
+      lire('/info'),
+      lire('/joueurs'),
+      lire('/equipes'),
+      lire('/activites'),
+      lire('/coffre'),
+      lire('/mesures'),
+    ])
+    return { info, joueurs, equipes, activites, coffre, mesures }
+  }),
+)
 ipcMain.handle('serveurs:ajouter', repondre(async (_e, adresse) => serveurs.ajouter(adresse)))
 ipcMain.handle('serveurs:retirer', repondre(async (_e, hote, port) => serveurs.retirer(hote, port)))
 

@@ -49,6 +49,14 @@ for (const f of [
   'src/lien.js',
   'src/serveurs.js',
   'src/ue4ss.js',
+  'src/sauvegardes.js',
+  /*
+    ⚠️ SANS `identite.js`, LE LANCEUR NE SIGNE PLUS RIEN. Tout le monde entre en
+       anonyme, les rôles disparaissent, et rien ne le dit : un fichier oublié
+       dans le paquet est exactement le genre de panne qu'on ne voit qu'en
+       production.
+  */
+  'src/identite.js',
 ]) {
   ok(dedans(path.basename(f)), `${f} est dans le paquet`)
 }

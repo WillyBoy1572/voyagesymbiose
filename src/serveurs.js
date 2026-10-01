@@ -9,8 +9,17 @@ const os = require('node:os')
  *  LISTE DE SERVEURS
  * ═══════════════════════════════════════════════════════════════════════════
  *  Chaque serveur Voyage expose `GET /info` sur son port TCP. Le lanceur
- *  interroge ceux que le joueur a enregistres, plus ceux de la liste publique
- *  quand elle existera.
+ *  interroge ceux que le joueur a enregistres, et lit l'annuaire public pour
+ *  proposer ceux qui ont choisi de s'y faire connaitre.
+ *
+ *  ⚠️ UN SERVEUR DE L'ANNUAIRE N'EST PAS UN SIGNET. Il apparait dans la liste,
+ *     marque `public`, mais il n'est pas ecrit dans le fichier du joueur : le
+ *     lendemain il peut avoir disparu, et une liste de signets qui se remplit
+ *     toute seule de serveurs morts est pire qu'une liste vide.
+ *
+ *  ⚠️ CE QUE L'ANNUAIRE DIT EST VERIFIE PAR LE LANCEUR LUI-MEME. On interroge
+ *     chaque serveur avant de l'afficher comme en ligne : l'annuaire a pu etre
+ *     interroge il y a trois minutes, le serveur a pu tomber depuis.
  *
  *  ⚠️ UN SERVEUR QUI NE REPOND PAS RESTE AFFICHE, EN GRIS. Le faire
  *     disparaitre ferait croire au joueur qu'il a perdu son signet.
@@ -71,6 +80,7 @@ function retirer(hote, port) {
  *    port TCP directement.
  */
 async function interroger(serveur) {
+  // Les champs venus de l'annuaire (public, pays, monde) sont conserves tels quels.
   const base = { ...serveur, enLigne: false }
   for (const portInfo of [serveur.port + 1, serveur.port]) {
     try {
@@ -97,9 +107,57 @@ async function interroger(serveur) {
   return base
 }
 
-async function rafraichir() {
-  const liste = lire()
-  return Promise.all(liste.map(interroger))
+/** L'adresse de l'annuaire public. Un seul endroit a changer. */
+const ANNUAIRE = 'https://caretakermp.symbioseheritage.ca/api/annuaire'
+
+/**
+ * Les serveurs qui se sont annonces publiquement.
+ *
+ * ⚠️ UN ANNUAIRE INJOIGNABLE N'EST PAS UNE PANNE DU LANCEUR. On rend une liste
+ *    vide et les signets du joueur s'affichent comme avant.
+ */
+async function annuaire() {
+  try {
+    const r = await fetch(ANNUAIRE, { signal: AbortSignal.timeout(4000) })
+    if (!r.ok) return []
+    const d = await r.json()
+    if (!d || !Array.isArray(d.serveurs)) return []
+
+    const sortie = []
+    for (const brut of d.serveurs.slice(0, 100)) {
+      const a = analyser(brut && brut.adresse)
+      if (!a) continue
+      sortie.push({
+        ...a,
+        public: true,
+        /*
+          ⚠️ ON GARDE CE QUE L'ANNUAIRE DIT, MAIS ON NE S'EN SERT PAS POUR
+             AFFICHER « EN LIGNE ». C'est `interroger` qui tranche, juste apres.
+        */
+        nomAnnonce: typeof brut.nom === 'string' ? brut.nom.slice(0, 60) : null,
+        pays: typeof brut.pays === 'string' ? brut.pays.slice(0, 8) : null,
+        monde: typeof brut.monde === 'string' ? brut.monde.slice(0, 60) : null,
+      })
+    }
+    return sortie
+  } catch {
+    return []
+  }
 }
 
-module.exports = { lire, ajouter, retirer, rafraichir, interroger, analyser, FICHIER }
+async function rafraichir() {
+  const signets = lire()
+  const publics = await annuaire()
+
+  /*
+    ⚠️ UN SERVEUR DEJA EN SIGNET N'APPARAIT PAS DEUX FOIS. Le joueur a pu
+       ajouter a la main un serveur qui s'annonce aussi : la meme carte deux
+       fois de suite le ferait douter de ce qu'il lit.
+  */
+  const deja = new Set(signets.map((s) => `${s.hote}:${s.port}`))
+  const aInterroger = [...signets, ...publics.filter((p) => !deja.has(`${p.hote}:${p.port}`))]
+
+  return Promise.all(aInterroger.map(interroger))
+}
+
+module.exports = { lire, ajouter, retirer, rafraichir, interroger, analyser, annuaire, FICHIER, ANNUAIRE }

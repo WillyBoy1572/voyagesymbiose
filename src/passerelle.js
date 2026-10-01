@@ -21,7 +21,23 @@ contextBridge.exposeInMainWorld('voyage', {
   installer: (dossier) => ipcRenderer.invoke('installer', dossier),
   desinstaller: (dossier) => ipcRenderer.invoke('desinstaller', dossier),
   jouer: (dossier) => ipcRenderer.invoke('jouer', dossier),
+  envoyerChat: (texte, canal) => ipcRenderer.invoke('chat:envoyer', texte, canal),
+  envoyerCommande: (texte) => ipcRenderer.invoke('commande:envoyer', texte),
   serveurs: () => ipcRenderer.invoke('serveurs:liste'),
+  detailServeur: (hote, port) => ipcRenderer.invoke('serveurs:detail', hote, port),
+
+  // ── Coffre commun ──────────────────────────────────────────
+  deposerAuCoffre: (nom, nombre) => ipcRenderer.invoke('coffre:deposer', nom, nombre),
+  retirerDuCoffre: (nom, nombre) => ipcRenderer.invoke('coffre:retirer', nom, nombre),
+
+  // ── Identite ───────────────────────────────────────────────
+  /*
+    ⚠️ LA CLE PRIVEE N'EST PAS ICI, ET ELLE NE PEUT PAS L'ETRE. Ces deux
+       fonctions ne rendent que l'empreinte : c'est elle que l'hote d'un serveur
+       inscrit dans `PROPRIETAIRES`, et elle ne permet rien a elle seule.
+  */
+  identite: () => ipcRenderer.invoke('identite:lire'),
+  regenererIdentite: () => ipcRenderer.invoke('identite:regenerer'),
   ajouterServeur: (adresse) => ipcRenderer.invoke('serveurs:ajouter', adresse),
   retirerServeur: (hote, port) => ipcRenderer.invoke('serveurs:retirer', hote, port),
   rapport: (dossier) => ipcRenderer.invoke('rapport:lire', dossier),
@@ -68,8 +84,28 @@ contextBridge.exposeInMainWorld('voyage', {
     ipcRenderer.on('aller-a', (_e, onglet) => rappel(String(onglet)))
   },
 
+  /*
+    ⚠️ ON NE PASSE PAS LA LIGNE PAR `String()`. Le lien envoie deux formes : du
+       texte deja ecrit (il vient du pont, deja traduit) ou un objet
+       `{heure, cle, valeurs}` que la page traduit elle-meme. `String()` sur le
+       second rendait « [object Object] » dans le journal en direct -- et seule
+       la relecture complete de l'etat affichait la vraie phrase, ce qui rendait
+       le defaut difficile a voir.
+
+    ⚠️ ON NE LAISSE PASSER QUE LES DEUX FORMES ATTENDUES. Une page ne doit pas
+       recevoir un objet arbitraire venu du processus principal.
+  */
   surLigneDuLien: (rappel) => {
     ipcRenderer.removeAllListeners('lien:ligne')
-    ipcRenderer.on('lien:ligne', (_e, ligne) => rappel(String(ligne)))
+    ipcRenderer.on('lien:ligne', (_e, ligne) => {
+      if (typeof ligne === 'string') return rappel(ligne)
+      if (ligne && typeof ligne === 'object') {
+        return rappel({
+          heure: typeof ligne.heure === 'string' ? ligne.heure : '',
+          cle: typeof ligne.cle === 'string' ? ligne.cle : '',
+          valeurs: ligne.valeurs && typeof ligne.valeurs === 'object' ? ligne.valeurs : undefined,
+        })
+      }
+    })
   },
 })

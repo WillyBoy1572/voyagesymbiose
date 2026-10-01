@@ -3,6 +3,7 @@
 const path = require('node:path')
 const fs = require('node:fs')
 const { spawn } = require('node:child_process')
+const identite = require('./identite')
 
 /**
  * ═══════════════════════════════════════════════════════════════════════════
@@ -30,6 +31,15 @@ let cible = null
 let lignes = []
 let ecouteur = null
 let ecouteurCommande = null
+let ecouteurReprise = null
+
+/*
+  ⚠️ LE JETON DE REPRISE VIT EN MEMOIRE ET SUR DISQUE. En memoire pour la
+     reconnexion immédiate ; sur disque parce que le vrai cas d'usage est le
+     plantage du jeu, apres lequel le lanceur redemarre lui aussi.
+*/
+let reprises = {}
+let dossierDonnees = null
 
 /** Appelee a chaque nouvelle ligne, pour que l'interface suive en direct. */
 function surLigne(f) {
@@ -39,6 +49,23 @@ function surLigne(f) {
 /** Appelee quand le JEU demande quelque chose (touche F7, F9…). */
 function surCommande(f) {
   ecouteurCommande = f
+}
+
+/** Appelee quand le serveur remet un jeton de reprise, pour qu'il soit garde. */
+function surReprise(f) {
+  ecouteurReprise = f
+}
+
+/**
+ * Pose le dossier de donnees et les jetons de reprise deja connus.
+ *
+ * ⚠️ LE MODULE NE DEVINE PAS OU SONT LES DONNEES. `app.getPath` n'existe que
+ *    dans le processus principal d'Electron ; un module qui l'appellerait ne
+ *    serait plus testable hors d'Electron.
+ */
+function poserContexte({ dossier, reprisesConnues }) {
+  dossierDonnees = dossier || null
+  reprises = reprisesConnues && typeof reprisesConnues === 'object' ? { ...reprisesConnues } : {}
 }
 
 /*
@@ -94,6 +121,27 @@ function demarrer({ hote, port, nom, motDePasse = '', langue = 'fr' }) {
   const arguments_ = [cheminPont(), '--serveur', adresse, '--nom', nom || 'Joueur', '--langue', langue]
   if (motDePasse) arguments_.push('--motdepasse', motDePasse)
 
+  /*
+    ⚠️ LE LANCEUR SIGNE, LE PONT PORTE. La cle privee ne passe JAMAIS en
+       argument : une ligne de commande se lit depuis n'importe quel autre
+       programme de la machine. Seule la signature voyage, et elle ne vaut que
+       pour ce pseudo et cette minute.
+  */
+  if (dossierDonnees) {
+    const preuve = identite.signer(dossierDonnees, nom || 'Joueur')
+    if (preuve) {
+      arguments_.push('--cle', preuve.cle, '--ts', String(preuve.ts), '--sig', preuve.sig)
+    }
+  }
+
+  /*
+    ⚠️ LE JETON DE REPRISE EST PAR SERVEUR. Le presenter au mauvais serveur ne
+       ferait rien de grave -- il serait simplement inconnu -- mais ce serait
+       envoyer un secret a quelqu'un qui n'a pas a le voir.
+  */
+  const jetonConnu = reprises[adresse]
+  if (jetonConnu) arguments_.push('--reprise', jetonConnu)
+
   lignes = []
   cible = { hote, port, nom, motDePasse }
   noter({ cle: 'lien.demarrage', valeurs: { adresse } })
@@ -118,6 +166,19 @@ function demarrer({ hote, port, nom, motDePasse = '', langue = 'fr' }) {
       const commande = m.match(/^##voyage-cmd\s+(\S+)/)
       if (commande) {
         if (ecouteurCommande) ecouteurCommande(commande[1])
+        continue
+      }
+      /*
+        ⚠️ CETTE LIGNE NE VA PAS DANS LE JOURNAL. C'est un secret : affiche, il
+           suffirait d'une capture d'ecran pour reprendre la place de quelqu'un.
+      */
+      const reprise = m.match(/^##voyage-reprise\s+(\S+)/)
+      if (reprise) {
+        if (cible) {
+          const adresseCible = `${cible.hote}:${cible.port}`
+          reprises[adresseCible] = reprise[1]
+          if (ecouteurReprise) ecouteurReprise(adresseCible, reprise[1])
+        }
         continue
       }
       noter(m.replace(/^\d{2}:\d{2}:\d{2}\s*/, ''))
@@ -174,4 +235,35 @@ function nettoyer() {
   processus = null
 }
 
-module.exports = { demarrer, arreter, etat, actif, surLigne, surCommande, cibleComplete, nettoyer }
+/**
+ * Ecrit une ligne de commande dans le pont.
+ *
+ * ⚠️ ON NE FERME JAMAIS stdin ICI. Sa fermeture est le signal d'arret du pont
+ *    (`SIGTERM` ne declenche rien sous Windows) : un `end()` malencontreux
+ *    couperait la partie au lieu d'envoyer un message.
+ */
+function envoyerLigne(ligne) {
+  if (!processus || processus.killed || !processus.stdin || !processus.stdin.writable) return false
+  const propre = String(ligne).replace(/[\r\n]+/g, ' ').trim()
+  if (!propre) return false
+  try {
+    processus.stdin.write(propre + '\n')
+    return true
+  } catch {
+    return false
+  }
+}
+
+module.exports = {
+  demarrer,
+  envoyerLigne,
+  arreter,
+  etat,
+  actif,
+  surLigne,
+  surCommande,
+  surReprise,
+  poserContexte,
+  cibleComplete,
+  nettoyer,
+}

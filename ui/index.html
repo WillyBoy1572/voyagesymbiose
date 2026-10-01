@@ -131,6 +131,98 @@
           </div>
           <pre class="journal" id="lien-journal" hidden></pre>
         </div>
+
+        <!--
+          Le chat s'ecrit ici, pas en jeu : le Lua d'UE4SS n'a pas d'entree
+          texte, et capturer le clavier casserait les commandes du jeu. Le
+          message part au serveur et s'affiche a l'ecran de tout le monde.
+        -->
+        <h2 data-t="chat.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="chat.sousTitre"></div>
+              <div class="detail" data-t="chat.aide"></div>
+            </div>
+          </div>
+          <form class="ligne" id="chat-forme">
+            <select id="chat-canal" disabled>
+              <option value="global" data-t="chat.global"></option>
+              <option value="local" data-t="chat.local"></option>
+              <option value="equipe" data-t="chat.equipe"></option>
+            </select>
+            <input type="text" id="chat-texte" data-t-ph="chat.placeholder" maxlength="240" autocomplete="off" disabled />
+            <div class="pousse">
+              <button class="action" type="submit" id="btn-chat" data-t="chat.envoyer" disabled></button>
+            </div>
+          </form>
+          <!--
+            Une commande part au serveur telle quelle : c'est lui qui decide si
+            elle existe et si le joueur a le droit de la lancer. Le lanceur qui
+            filtrerait lui-meme obligerait a tenir la liste en deux endroits.
+          -->
+          <form class="ligne" id="commande-forme">
+            <input type="text" id="commande-texte" data-t-ph="cmd.placeholder" maxlength="240" autocomplete="off" disabled />
+            <div class="pousse">
+              <button class="action discret" type="submit" id="btn-commande" data-t="cmd.envoyer" disabled></button>
+            </div>
+          </form>
+          <div class="ligne">
+            <div class="detail note" data-t="cmd.aide"></div>
+          </div>
+        </div>
+        <h2 data-t="partie.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="partie.joueurs"></div>
+              <div class="detail" id="partie-joueurs" data-t="partie.vide"></div>
+            </div>
+            <div class="pousse"><span class="etat" id="partie-compte">—</span></div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="partie.equipes"></div>
+              <div class="detail" id="partie-equipes" data-t="partie.aucuneEquipe"></div>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="partie.activites"></div>
+              <div class="detail" id="partie-activites" data-t="partie.aucuneActivite"></div>
+            </div>
+          </div>
+          <div class="ligne">
+            <div class="detail note" id="partie-mesures">—</div>
+          </div>
+        </div>
+
+        <!--
+          Le coffre commun est le SEUL echange d'objets possible : chaque joueur
+          charge sa propre sauvegarde, et rien dans le jeu ne relie son sac a
+          celui d'un autre. Le serveur tient le coffre et debite avant que
+          quiconque recoive.
+        -->
+        <h2 data-t="coffre.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="coffre.contenu"></div>
+              <div class="detail" id="coffre-contenu" data-t="coffre.vide"></div>
+            </div>
+          </div>
+          <form class="ligne" id="coffre-forme">
+            <input type="text" id="coffre-objet" data-t-ph="coffre.objet" maxlength="48" autocomplete="off" disabled />
+            <input type="number" id="coffre-nombre" value="1" min="1" max="10000" disabled />
+            <div class="pousse">
+              <button class="action" type="submit" id="btn-coffre-deposer" data-t="coffre.deposer" disabled></button>
+              <button class="action discret" type="button" id="btn-coffre-retirer" data-t="coffre.retirer" disabled></button>
+            </div>
+          </form>
+          <div class="ligne">
+            <div class="detail note" data-t="coffre.aide"></div>
+          </div>
+        </div>
       </section>
 
 
@@ -256,6 +348,33 @@
             </div>
             <div class="pousse">
               <button class="action" id="btn-ouvrir-jeu" data-t="regl.ouvrirJeu"></button>
+            </div>
+          </div>
+        </div>
+
+        <!--
+          L'identite est une paire de cles ed25519 fabriquee ici. La partie
+          privee ne quitte jamais cette machine ; l'empreinte est ce que l'hote
+          d'un serveur inscrit pour donner un role.
+        -->
+        <h2 data-t="ident.titre"></h2>
+        <div class="carte">
+          <div class="ligne">
+            <div>
+              <div class="titre" id="ident-empreinte">—</div>
+              <div class="detail" data-t="ident.detail"></div>
+            </div>
+            <div class="pousse">
+              <button class="action discret" id="btn-ident-copier" data-t="ident.copier"></button>
+            </div>
+          </div>
+          <div class="ligne">
+            <div>
+              <div class="titre" data-t="ident.refaireTitre"></div>
+              <div class="detail" data-t="ident.refaireDetail"></div>
+            </div>
+            <div class="pousse">
+              <button class="action discret" id="btn-ident-refaire" data-t="ident.refaire"></button>
             </div>
           </div>
         </div>
