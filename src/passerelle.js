@@ -136,7 +136,8 @@ contextBridge.exposeInMainWorld('voyage', {
 
   // ── Le lien avec le serveur ──────────────────────────────────────────────
   enregistrerNom: (nom) => ipcRenderer.invoke('reglages:nom', nom),
-  connecter: (hote, port, motDePasse) => ipcRenderer.invoke('lien:connecter', hote, port, motDePasse),
+  connecter: (hote, port, motDePasse, billet) =>
+    ipcRenderer.invoke('lien:connecter', hote, port, motDePasse, billet),
   deconnecter: () => ipcRenderer.invoke('lien:deconnecter'),
   etatLien: () => ipcRenderer.invoke('lien:etat'),
 

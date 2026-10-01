@@ -114,9 +114,29 @@ function cibleComplete() {
      vient de le taper pour se connecter ; le redemander a chaque action
      lancee depuis le jeu serait absurde. Il part avec le processus.
 */
+/**
+ * L'alphabet des billets, copie de `src/rendezvous.js` cote serveur : ni 0/O
+ * ni 1/l, pour qu'un billet se lise au telephone sans se tromper.
+ */
+const ALPHABET_BILLET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+
+/**
+ * Vrai si ce texte est un billet de rendez-vous et pas une adresse.
+ *
+ * ⚠️ ON EXIGE L'ALPHABET EXACT, pas « huit caracteres ». Un nom de serveur
+ *    de huit lettres serait avale comme un billet et partirait chercher un
+ *    hote qui n'existe pas, au lieu de dire simplement « introuvable ».
+ */
+function ressembleAUnBillet(texte) {
+  const t = String(texte ?? '').trim().toUpperCase()
+  if (t.length !== 8) return false
+  for (const c of t) if (!ALPHABET_BILLET.includes(c)) return false
+  return true
+}
+
 function demarrer({
-  hote,
-  port,
+  hote = '',
+  port = 0,
   nom,
   motDePasse = '',
   langue = 'fr',
@@ -128,7 +148,14 @@ function demarrer({
 }) {
   if (actif()) arreter()
 
-  const adresse = `${hote}:${port}`
+  /*
+    ⚠️ AVEC UN BILLET, L'ADRESSE N'EXISTE PAS ENCORE. Le pont a quand meme
+       besoin d'un `--serveur` : on lui donne un reperage qui ne sera jamais
+       contacte, et c'est `rdv-hote` qui lui dira ou aller. Mettre une vraie
+       adresse ici ferait dire bonjour au mauvais serveur pendant la recherche.
+  */
+  const parBillet = Boolean(billet && rendezvous)
+  const adresse = parBillet ? `0.0.0.0:0` : `${hote}:${port}`
   const arguments_ = [cheminPont(), '--serveur', adresse, '--nom', nom || 'Joueur', '--langue', langue]
   if (motDePasse) arguments_.push('--motdepasse', motDePasse)
 
@@ -296,6 +323,7 @@ function envoyerLigne(ligne) {
 }
 
 module.exports = {
+  ressembleAUnBillet,
   demarrer,
   envoyerLigne,
   arreter,

@@ -50,7 +50,16 @@ const DELAI_DEMARRAGE_MS = 20_000
  *    rendez-vous, et c'est tout ce qu'il faut pour que les hôtes derrière une
  *    box se fassent trouver.
  */
-const RENDEZVOUS_PAR_DEFAUT = '144.217.162.237:30158'
+/*
+  ⚠️ CE POINT DE RENDEZ-VOUS N'EST PAS UN SERVEUR DE JEU, ET C'EST TOUT
+     L'INTERET. Les serveurs publics sont joints par un tunnel qui masque
+     l'adresse de leurs visiteurs : un rendez-vous tenu par l'un d'eux voit
+     tout le monde arriver de la meme adresse privee et ne peut rien faire.
+     Celui-ci tourne sur le VPS frontal lui-meme, sur un port hors de la plage
+     redirigee : il lit la vraie adresse. Verifie le 2026-10-01 : un client
+     exterieur a joint une partie derriere une box, sans redirection de port.
+*/
+const RENDEZVOUS_PAR_DEFAUT = '144.217.162.237:29999'
 
 let processus = null
 let lignes = []

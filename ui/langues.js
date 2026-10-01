@@ -103,6 +103,9 @@ const LANGUES_TEXTES = {
 
     'serv.parNom': 'Tu peux aussi écrire simplement le NOM d’un serveur public — « Voyage Public 2 » suffit, le lanceur le trouve dans l’annuaire.',
     'serv.cherche': 'Recherche de « {nom} » dans l’annuaire…',
+    'serv.billetCherche': 'Billet {billet} — recherche de l’hôte au point de rendez-vous…',
+    'serv.billetCible': 'billet {billet}',
+    'serv.billetEnCours': 'Les deux côtés percent. Ça prend une seconde ou deux.',
     'serv.introuvableNom': 'Aucun serveur public ne porte ce nom. Vérifie l’orthographe, ou demande son adresse à celui qui héberge.',
 
     'heb.titre': 'Héberger depuis chez toi',
@@ -469,6 +472,9 @@ const LANGUES_TEXTES = {
 
     'serv.parNom': 'You can also just type a public server’s NAME — “Voyage Public 2” is enough, the launcher finds it in the directory.',
     'serv.cherche': 'Looking for “{nom}” in the directory…',
+    'serv.billetCherche': 'Ticket {billet} — looking for the host at the rendezvous…',
+    'serv.billetCible': 'ticket {billet}',
+    'serv.billetEnCours': 'Both sides are punching through. Give it a second or two.',
     'serv.introuvableNom': 'No public server goes by that name. Check the spelling, or ask the host for the address.',
 
     'heb.titre': 'Host from your own machine',
@@ -832,6 +838,9 @@ const LANGUES_TEXTES = {
 
     'serv.parNom': 'También puedes escribir solo el NOMBRE de un servidor público — «Voyage Public 2» basta, el lanzador lo busca en el directorio.',
     'serv.cherche': 'Buscando «{nom}» en el directorio…',
+    'serv.billetCherche': 'Billete {billet} — buscando al anfitrión en el punto de encuentro…',
+    'serv.billetCible': 'billete {billet}',
+    'serv.billetEnCours': 'Ambos lados están perforando. Tarda un segundo o dos.',
     'serv.introuvableNom': 'Ningún servidor público se llama así. Revisa la ortografía, o pide la dirección a quien aloja.',
 
     'heb.titre': 'Alojar desde tu propia máquina',

@@ -633,12 +633,24 @@ ipcMain.handle(
 
 ipcMain.handle(
   'lien:connecter',
-  repondre(async (_e, hote, port, motDePasse) => {
+  repondre(async (_e, hote, port, motDePasse, billet) => {
     const reglages = lireReglages()
     const nom = (reglages.nomJoueur || '').trim() || 'Joueur'
+    /*
+      ⚠️ LE BILLET SE RESOUT DEPUIS LA PRISE DU PONT, PAS D'ICI. Le percage
+         ouvre un chemin vers la prise QUI A DEMANDE : resoudre le billet dans
+         le processus principal donnerait une adresse joignable par le lanceur
+         et par personne d'autre. C'est le pont qui parle au rendez-vous.
+    */
+    const b = String(billet ?? '').trim().toUpperCase()
+    const rendezvous = b
+      ? String(lireReglages().rendezvous || heberger.RENDEZVOUS_PAR_DEFAUT)
+      : ''
     return lien.demarrer({
       hote,
       port,
+      billet: b,
+      rendezvous,
       nom,
       motDePasse,
       langue: reglages.langue || 'fr',

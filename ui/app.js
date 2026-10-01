@@ -373,12 +373,43 @@ function ressembleAUneAdresse(texte) {
   return /^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(String(texte).trim()) && /[.:]/.test(texte)
 }
 
+/**
+ * Un billet de rendez-vous : huit caracteres, alphabet sans 0/O ni 1/l.
+ *
+ * ⚠️ CE N'EST PAS UN SERVEUR QU'ON AJOUTE A SA LISTE. Un billet ne vaut que
+ *    tant que l'hote entretient son trou : le garder dans la liste donnerait
+ *    une entree morte au prochain demarrage, qui aurait l'air d'une panne.
+ *    On se connecte tout de suite, et on ne retient rien.
+ */
+const ALPHABET_BILLET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'
+function ressembleAUnBillet(texte) {
+  const t = String(texte ?? '').trim().toUpperCase()
+  if (t.length !== 8) return false
+  for (const c of t) if (!ALPHABET_BILLET.includes(c)) return false
+  return true
+}
+
+async function connecterParBillet(billet) {
+  const b = billet.trim().toUpperCase()
+  dire(T('serv.billetCherche', { billet: b }), 'info')
+  const r = deballer(await window.voyage.connecter('', 0, '', b))
+  if (!r) return
+  if (r.ok === false) return dire(r.erreur, 'erreur')
+  cibleCourante = T('serv.billetCible', { billet: b })
+  dire(T('serv.billetEnCours'), 'info')
+}
+
 $('btn-ajouter').addEventListener('click', async () => {
   const champ = $('adresse')
   const saisie = champ.value.trim()
   if (!saisie) return
 
   let aAjouter = saisie
+
+  if (ressembleAUnBillet(saisie)) {
+    champ.value = ''
+    return connecterParBillet(saisie)
+  }
 
   if (!ressembleAUneAdresse(saisie)) {
     dire(T('serv.cherche', { nom: saisie }), 'info')
@@ -1232,8 +1263,8 @@ $('btn-invitation-rejoindre').addEventListener('click', async () => {
     // Un billet se saisit dans le champ d'ajout : le lanceur sait le chercher.
     const bouton = document.querySelector('nav button[data-onglet="serveurs"]')
     if (bouton) bouton.click()
-    $('adresse').value = i.billet
-    dire(T('inv.billetSaisi', { billet: i.billet }), 'info')
+    $('adresse').value = ''
+    return connecterParBillet(i.billet)
     return
   }
 

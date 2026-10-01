@@ -1,6 +1,6 @@
 {
   "name": "symbiose-voyage",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "private": true,
   "description": "Serveur cooperatif autoritaire pour The Last Caretaker. Aucune dependance : uniquement la bibliotheque standard de Node.",
   "license": "UNLICENSED",
